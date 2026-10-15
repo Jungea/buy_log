@@ -7,6 +7,10 @@ import com.example.buylog.data.PaymentRepository
 class BuyLogApplication : Application() {
     val repository: PaymentRepository by lazy {
         val database = BuyLogDatabase.getInstance(this)
-        PaymentRepository(database.paymentDao(), database.paymentMethodDao())
+        PaymentRepository(
+            paymentDao = database.paymentDao(),
+            paymentMethodDao = database.paymentMethodDao(),
+            notificationEventDao = database.notificationEventDao(),
+        )
     }
 }

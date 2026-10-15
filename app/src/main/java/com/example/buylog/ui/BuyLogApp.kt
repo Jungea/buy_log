@@ -1,5 +1,9 @@
 package com.example.buylog.ui
 
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.provider.Settings
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -26,12 +30,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -43,8 +49,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.buylog.MainViewModel
+import com.example.buylog.NotificationCaptureSettings
+import com.example.buylog.data.NotificationEventEntity
 import com.example.buylog.data.PaymentDraft
 import com.example.buylog.data.PaymentEntity
 import com.example.buylog.data.PaymentMethodEntity
@@ -61,16 +73,24 @@ import java.util.Locale
 
 private val inputDateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
 private val displayDateFormatter = DateTimeFormatter.ofPattern("MM/dd HH:mm")
+private val debugDateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
 private val moneyFormatter = NumberFormat.getNumberInstance(Locale.KOREA)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BuyLogApp(viewModel: MainViewModel) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val notificationEvents by viewModel.notificationEvents.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val notificationAccessEnabled = rememberNotificationAccessEnabled()
+    var notificationCaptureEnabled by remember {
+        mutableStateOf(NotificationCaptureSettings.isEnabled(context))
+    }
     val snackbarHostState = remember { SnackbarHostState() }
     var editing by remember { mutableStateOf<PaymentWithMethod?>(null) }
     var showEditor by remember { mutableStateOf(false) }
     var showMethodManager by remember { mutableStateOf(false) }
+    var showNotificationLog by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf<PaymentEntity?>(null) }
 
     LaunchedEffect(viewModel) {
@@ -82,6 +102,9 @@ fun BuyLogApp(viewModel: MainViewModel) {
             TopAppBar(
                 title = { Text("결제 기록") },
                 actions = {
+                    TextButton(onClick = { showNotificationLog = true }) {
+                        Text("알림 로그")
+                    }
                     TextButton(onClick = { showMethodManager = true }) {
                         Text("결제수단 관리")
                     }
@@ -147,6 +170,22 @@ fun BuyLogApp(viewModel: MainViewModel) {
         )
     }
 
+    if (showNotificationLog) {
+        NotificationLogDialog(
+            events = notificationEvents,
+            notificationAccessEnabled = notificationAccessEnabled,
+            notificationCaptureEnabled = notificationCaptureEnabled,
+            onCaptureEnabledChange = { enabled ->
+                NotificationCaptureSettings.setEnabled(context, enabled)
+                notificationCaptureEnabled = enabled
+            },
+            onOpenSettings = {
+                context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+            },
+            onDismiss = { showNotificationLog = false },
+        )
+    }
+
     deleting?.let { payment ->
         AlertDialog(
             onDismissRequest = { deleting = null },
@@ -160,6 +199,135 @@ fun BuyLogApp(viewModel: MainViewModel) {
             },
             dismissButton = { TextButton(onClick = { deleting = null }) { Text("취소") } },
         )
+    }
+}
+
+@Composable
+private fun rememberNotificationAccessEnabled(): Boolean {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var enabled by remember { mutableStateOf(context.isNotificationAccessEnabled()) }
+
+    DisposableEffect(context, lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                enabled = context.isNotificationAccessEnabled()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    return enabled
+}
+
+@Composable
+private fun NotificationLogDialog(
+    events: List<NotificationEventEntity>,
+    notificationAccessEnabled: Boolean,
+    notificationCaptureEnabled: Boolean,
+    onCaptureEnabledChange: (Boolean) -> Unit,
+    onOpenSettings: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("알림 로그") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (notificationAccessEnabled) {
+                            MaterialTheme.colorScheme.primaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.errorContainer
+                        },
+                    ),
+                ) {
+                    Column(Modifier.padding(12.dp)) {
+                        Text(
+                            if (notificationAccessEnabled) "알림 접근 권한이 켜져 있습니다."
+                            else "알림 접근 권한이 꺼져 있습니다.",
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            "수집한 원문은 이 기기에만 저장되며, 아직 결제로 자동 등록하지 않습니다.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("원문 알림 수집", fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "켜는 동안 받은 알림만 로그에 저장합니다.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = notificationCaptureEnabled,
+                        onCheckedChange = onCaptureEnabledChange,
+                        enabled = notificationAccessEnabled,
+                    )
+                }
+                if (events.isEmpty()) {
+                    Text(
+                        if (notificationCaptureEnabled) {
+                            "수집된 알림이 없습니다. 금융 앱 또는 문자 앱 알림을 받은 다음 다시 확인해 주세요."
+                        } else {
+                            "원문 알림 수집을 켠 뒤 필요한 앱의 알림을 받아 보세요."
+                        },
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    Text("최근 알림 ${events.size}건", style = MaterialTheme.typography.labelLarge)
+                    LazyColumn(
+                        modifier = Modifier.height(300.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        items(events, key = { it.id }) { event ->
+                            NotificationEventRow(event)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
+        dismissButton = {
+            TextButton(onClick = onOpenSettings) {
+                Text("권한 설정")
+            }
+        },
+    )
+}
+
+@Composable
+private fun NotificationEventRow(event: NotificationEventEntity) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(event.appName, fontWeight = FontWeight.SemiBold)
+                Text(
+                    event.receivedAt.asDebugDate(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Text(
+                if (event.sourceType == "SMS_NOTIFICATION") "문자 앱 알림" else "앱 알림",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Text("패키지: ${event.packageName}", style = MaterialTheme.typography.labelSmall)
+            if (event.title.isNotBlank()) {
+                Text("제목: ${event.title}", style = MaterialTheme.typography.bodySmall)
+            }
+            Text("원문: ${event.rawText}", style = MaterialTheme.typography.bodySmall)
+        }
     }
 }
 
@@ -467,6 +635,10 @@ private fun Long.asDisplayDate(): String = Instant.ofEpochMilli(this)
     .atZone(ZoneId.systemDefault())
     .format(displayDateFormatter)
 
+private fun Long.asDebugDate(): String = Instant.ofEpochMilli(this)
+    .atZone(ZoneId.systemDefault())
+    .format(debugDateFormatter)
+
 private fun Long.asInputDate(): String = Instant.ofEpochMilli(this)
     .atZone(ZoneId.systemDefault())
     .format(inputDateFormatter)
@@ -479,3 +651,9 @@ private fun String.toEpochMillisOrNull(): Long? = try {
 } catch (_: DateTimeParseException) {
     null
 }
+
+private fun Context.isNotificationAccessEnabled(): Boolean =
+    Settings.Secure.getString(contentResolver, "enabled_notification_listeners")
+        ?.split(':')
+        ?.any { value -> ComponentName.unflattenFromString(value)?.packageName == packageName }
+        ?: false

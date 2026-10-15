@@ -8,6 +8,7 @@ import java.time.ZoneId
 class PaymentRepository(
     private val paymentDao: PaymentDao,
     private val paymentMethodDao: PaymentMethodDao,
+    private val notificationEventDao: NotificationEventDao,
     private val clock: Clock = Clock.systemDefaultZone(),
     private val zoneId: ZoneId = ZoneId.systemDefault(),
 ) {
@@ -19,6 +20,9 @@ class PaymentRepository(
     fun observeAllPayments(): Flow<List<PaymentWithMethod>> = paymentDao.observeAllPayments()
 
     fun observePaymentMethods(): Flow<List<PaymentMethodEntity>> = paymentMethodDao.observeAll()
+
+    fun observeNotificationEvents(): Flow<List<NotificationEventEntity>> =
+        notificationEventDao.observeLatest()
 
     suspend fun savePayment(draft: PaymentDraft, existing: PaymentEntity? = null) {
         require(draft.amount > 0) { "금액은 0원보다 커야 합니다." }
@@ -46,6 +50,21 @@ class PaymentRepository(
             PaymentMethodEntity(name = name.trim(), createdAt = clock.millis()),
         )
     }
+
+    suspend fun recordNotificationEvent(draft: NotificationEventDraft) {
+        notificationEventDao.insert(
+            NotificationEventEntity(
+                sourceType = draft.sourceType,
+                packageName = draft.packageName,
+                appName = draft.appName,
+                title = draft.title,
+                content = draft.content,
+                rawText = draft.rawText,
+                receivedAt = draft.receivedAt,
+                createdAt = clock.millis(),
+            ),
+        )
+    }
 }
 
 data class PaymentDraft(
@@ -54,4 +73,14 @@ data class PaymentDraft(
     val paidAt: Long,
     val paymentMethodId: Long,
     val memo: String,
+)
+
+data class NotificationEventDraft(
+    val sourceType: String,
+    val packageName: String,
+    val appName: String,
+    val title: String,
+    val content: String,
+    val rawText: String,
+    val receivedAt: Long,
 )

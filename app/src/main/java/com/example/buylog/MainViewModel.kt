@@ -7,6 +7,7 @@ import com.example.buylog.data.PaymentDraft
 import com.example.buylog.data.PaymentEntity
 import com.example.buylog.data.PaymentMethodEntity
 import com.example.buylog.data.PaymentWithMethod
+import com.example.buylog.data.NotificationEventEntity
 import com.example.buylog.domain.PaymentSummary
 import com.example.buylog.domain.PaymentSummaryCalculator
 import kotlinx.coroutines.channels.Channel
@@ -26,6 +27,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = (application as BuyLogApplication).repository
     private val messages = Channel<String>(Channel.BUFFERED)
     val messageEvents = messages.receiveAsFlow()
+
+    val notificationEvents = repository.observeNotificationEvents()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList<NotificationEventEntity>())
 
     val uiState = combine(
         repository.observeAllPayments(),
