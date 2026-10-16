@@ -80,6 +80,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun updateCardSettings(method: PaymentMethodEntity, isCard: Boolean, company: String, startDay: Int, target: Long) {
+        viewModelScope.launch {
+            runCatching { repository.updateCardSettings(method, isCard, company, startDay, target) }
+                .onFailure { messages.send(it.message ?: "카드 설정을 저장하지 못했습니다.") }
+        }
+    }
+
     fun addTag(name: String, exclude: Boolean) {
         viewModelScope.launch {
             runCatching { repository.addTag(name, exclude) }

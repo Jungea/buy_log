@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [PaymentEntity::class, PaymentMethodEntity::class, NotificationEventEntity::class, TagEntity::class, PaymentTagCrossRef::class],
-    version = 6,
+    version = 7,
     exportSchema = true,
 )
 abstract class BuyLogDatabase : RoomDatabase() {
@@ -28,7 +28,7 @@ abstract class BuyLogDatabase : RoomDatabase() {
                     context.applicationContext,
                     BuyLogDatabase::class.java,
                     "buy-log.db",
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                     .build()
                     .also { instance = it }
             }
@@ -113,6 +113,16 @@ abstract class BuyLogDatabase : RoomDatabase() {
                 db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_tags_name` ON `tags` (`name`)")
                 db.execSQL("CREATE TABLE IF NOT EXISTS `payment_tags` (`paymentId` INTEGER NOT NULL, `tagId` INTEGER NOT NULL, PRIMARY KEY(`paymentId`, `tagId`))")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_payment_tags_tagId` ON `payment_tags` (`tagId`)")
+            }
+        }
+
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `payment_methods` ADD COLUMN `isCard` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `payment_methods` ADD COLUMN `cardCompany` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `payment_methods` ADD COLUMN `periodStartDay` INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE `payment_methods` ADD COLUMN `performanceTarget` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `payments` ADD COLUMN `performanceIncluded` INTEGER NOT NULL DEFAULT 1")
             }
         }
     }

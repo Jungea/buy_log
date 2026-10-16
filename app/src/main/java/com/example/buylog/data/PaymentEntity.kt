@@ -1,6 +1,7 @@
 package com.example.buylog.data
 
 import androidx.room.Entity
+import androidx.room.ColumnInfo
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -26,4 +27,5 @@ data class PaymentEntity(
     val memo: String,
     val createdAt: Long,
     val updatedAt: Long,
+    @ColumnInfo(defaultValue = "1") val performanceIncluded: Boolean = true,
 )

@@ -14,6 +14,9 @@ interface PaymentMethodDao {
     @Query("SELECT * FROM payment_methods WHERE name = :name LIMIT 1")
     suspend fun findByName(name: String): PaymentMethodEntity?
 
+    @Query("UPDATE payment_methods SET isCard = :isCard, cardCompany = :company, periodStartDay = :startDay, performanceTarget = :target WHERE id = :id")
+    suspend fun updateCardSettings(id: Long, isCard: Boolean, company: String, startDay: Int, target: Long)
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(method: PaymentMethodEntity): Long
 }

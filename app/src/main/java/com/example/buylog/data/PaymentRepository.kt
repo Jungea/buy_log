@@ -52,6 +52,7 @@ class PaymentRepository(
             memo = draft.memo.trim(),
             createdAt = existing?.createdAt ?: now,
             updatedAt = now,
+            performanceIncluded = draft.performanceIncluded,
         )
         val paymentId = if (existing == null) paymentDao.insert(entity) else {
             paymentDao.update(entity)
@@ -68,6 +69,12 @@ class PaymentRepository(
         return paymentMethodDao.insert(
             PaymentMethodEntity(name = name.trim(), createdAt = clock.millis()),
         )
+    }
+
+    suspend fun updateCardSettings(method: PaymentMethodEntity, isCard: Boolean, company: String, startDay: Int, target: Long) {
+        require(startDay in 1..31) { "계산 시작일은 1~31일이어야 합니다." }
+        require(target >= 0) { "실적 목표는 0원 이상이어야 합니다." }
+        paymentMethodDao.updateCardSettings(method.id, isCard, company.trim(), startDay, target)
     }
 
     suspend fun addTag(name: String, exclude: Boolean): Long {
@@ -193,6 +200,7 @@ class PaymentRepository(
                 memo = "알림에서 자동 등록",
                 createdAt = now,
                 updatedAt = now,
+                performanceIncluded = true,
             ),
         )
         notificationEventDao.updateRegistration(
@@ -217,6 +225,7 @@ data class PaymentDraft(
     val paymentMethodId: Long,
     val memo: String,
     val tagIds: Set<Long> = emptySet(),
+    val performanceIncluded: Boolean = true,
 )
 
 data class NotificationEventDraft(
