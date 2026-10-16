@@ -75,6 +75,7 @@ import com.example.buylog.data.PaymentMethodEntity
 import com.example.buylog.data.PaymentWithMethod
 import com.example.buylog.data.TagEntity
 import com.example.buylog.data.AutoTagRuleEntity
+import com.example.buylog.data.UNCLASSIFIED_PAYMENT_METHOD_NAME
 import com.example.buylog.domain.PaymentSummary
 import com.example.buylog.domain.PaymentParseStatus
 import com.example.buylog.domain.CandidateRegistrationStatus
@@ -137,6 +138,7 @@ fun BuyLogApp(viewModel: MainViewModel, addPaymentRequest: Int = 0) {
     var showManagementMenu by remember { mutableStateOf(false) }
     var showBackupDialog by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf<PaymentEntity?>(null) }
+    var deletingMethod by remember { mutableStateOf<PaymentMethodEntity?>(null) }
     var page by rememberSaveable { mutableStateOf(0) }
     var salaryMode by rememberSaveable { mutableStateOf(false) }
     var periodOffset by rememberSaveable { mutableStateOf(0L) }
@@ -453,6 +455,10 @@ fun BuyLogApp(viewModel: MainViewModel, addPaymentRequest: Int = 0) {
             onDismiss = { showMethodManager = false },
             onAddMethod = viewModel::addPaymentMethod,
             onUpdateCardSettings = viewModel::updateCardSettings,
+            onDeleteMethod = { method ->
+                showMethodManager = false
+                deletingMethod = method
+            },
         )
     }
 
@@ -528,6 +534,71 @@ fun BuyLogApp(viewModel: MainViewModel, addPaymentRequest: Int = 0) {
             onConfirmDuplicateAsSame = viewModel::confirmDuplicateAsSame,
             onConfirmDuplicateAsSeparate = viewModel::confirmDuplicateAsSeparate,
             onDismiss = { showNotificationLog = false },
+        )
+    }
+
+    deletingMethod?.let { method ->
+        val paymentCount = state.payments.count { it.payment.paymentMethodId == method.id }
+        val replacementCandidates = state.methods.filter { it.id != method.id }
+        var replacementMethodId by rememberSaveable(method.id) {
+            mutableStateOf(replacementCandidates.firstOrNull { it.name == UNCLASSIFIED_PAYMENT_METHOD_NAME }?.id)
+        }
+        var replacementMenuExpanded by remember(method.id) { mutableStateOf(false) }
+        LaunchedEffect(replacementCandidates, method.id) {
+            if (replacementCandidates.none { it.id == replacementMethodId }) {
+                replacementMethodId = replacementCandidates.firstOrNull { it.name == UNCLASSIFIED_PAYMENT_METHOD_NAME }?.id
+                    ?: replacementCandidates.firstOrNull()?.id
+            }
+        }
+        val replacement = replacementCandidates.firstOrNull { it.id == replacementMethodId }
+        AlertDialog(
+            onDismissRequest = { deletingMethod = null },
+            title = { Text("${method.name}을 삭제할까요?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("연결된 결제 ${paymentCount}건은 삭제하지 않고 아래 결제수단으로 변경됩니다.")
+                    OutlinedCard(
+                        onClick = { replacementMenuExpanded = true },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text("이동할 결제수단", style = MaterialTheme.typography.labelSmall)
+                                Text(replacement?.name ?: "선택해 주세요", fontWeight = FontWeight.SemiBold)
+                            }
+                            Text("변경 ▼", color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                    DropdownMenu(
+                        expanded = replacementMenuExpanded,
+                        onDismissRequest = { replacementMenuExpanded = false },
+                    ) {
+                        replacementCandidates.forEach { candidate ->
+                            DropdownMenuItem(
+                                text = { Text(candidate.name) },
+                                onClick = {
+                                    replacementMethodId = candidate.id
+                                    replacementMenuExpanded = false
+                                },
+                            )
+                        }
+                    }
+                    Text("${method.name}만 삭제되며 결제 기록과 태그는 유지됩니다.")
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = replacement != null,
+                    onClick = {
+                        replacement?.let { viewModel.deletePaymentMethod(method, it) }
+                        deletingMethod = null
+                    },
+                ) { Text("이동 후 삭제", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { deletingMethod = null }) { Text("취소") } },
         )
     }
 
@@ -1134,6 +1205,7 @@ private fun PaymentMethodManagerDialog(
     onDismiss: () -> Unit,
     onAddMethod: (String) -> Unit,
     onUpdateCardSettings: (PaymentMethodEntity, Boolean, String, Int, Long) -> Unit,
+    onDeleteMethod: (PaymentMethodEntity) -> Unit,
 ) {
     var newMethod by rememberSaveable { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
@@ -1153,6 +1225,11 @@ private fun PaymentMethodManagerDialog(
                         "등록된 결제수단",
                         style = MaterialTheme.typography.labelLarge,
                     )
+                    Text(
+                        "신용카드와 체크카드는 설정에서 카드로 관리하고, 통장·계좌이체·현금은 카드 설정 없이 사용할 수 있어요.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
                 if (methods.isEmpty()) {
                     item {
@@ -1167,12 +1244,20 @@ private fun PaymentMethodManagerDialog(
                             Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
                                     Text(method.name, fontWeight = FontWeight.SemiBold)
+                                    if (method.name == UNCLASSIFIED_PAYMENT_METHOD_NAME) {
+                                        Text("첫 결제에 사용할 수 있는 기본 수단 · 삭제 불가", style = MaterialTheme.typography.bodySmall)
+                                    }
                                     if (method.isCard) Text("${method.cardCompany} · 매월 ${method.periodStartDay}일 시작 · 목표 ${method.performanceTarget.asWon()}", style = MaterialTheme.typography.bodySmall)
                                 }
-                                TextButton(onClick = {
-                                    editingMethod = method; isCard = method.isCard; company = method.cardCompany
-                                    startDay = method.periodStartDay.toString(); target = method.performanceTarget.toString()
-                                }) { Text("카드 설정") }
+                                if (method.name != UNCLASSIFIED_PAYMENT_METHOD_NAME) {
+                                    TextButton(onClick = {
+                                        editingMethod = method; isCard = method.isCard; company = method.cardCompany
+                                        startDay = method.periodStartDay.toString(); target = method.performanceTarget.toString()
+                                    }) { Text("설정") }
+                                    TextButton(onClick = { onDeleteMethod(method) }) {
+                                        Text("삭제", color = MaterialTheme.colorScheme.error)
+                                    }
+                                }
                             }
                         }
                     }
@@ -1180,15 +1265,17 @@ private fun PaymentMethodManagerDialog(
                 editingMethod?.let { method ->
                     item {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("${method.name} 카드 설정", fontWeight = FontWeight.Bold)
-                            Row(verticalAlignment = Alignment.CenterVertically) { Text("카드로 사용", Modifier.weight(1f)); Switch(isCard, { isCard = it }) }
-                            OutlinedTextField(company, { company = it }, label = { Text("카드사") }, modifier = Modifier.fillMaxWidth())
-                            OutlinedTextField(startDay, { startDay = it.filter(Char::isDigit).take(2) }, label = { Text("계산 시작일 (1~31)") }, modifier = Modifier.fillMaxWidth())
-                            OutlinedTextField(target, { target = it.filter(Char::isDigit) }, label = { Text("실적 목표 (원)") }, modifier = Modifier.fillMaxWidth())
+                            Text("${method.name} 설정", fontWeight = FontWeight.Bold)
+                            Row(verticalAlignment = Alignment.CenterVertically) { Text("카드·체크카드로 관리", Modifier.weight(1f)); Switch(isCard, { isCard = it }) }
+                            if (isCard) {
+                                OutlinedTextField(company, { company = it }, label = { Text("카드사") }, modifier = Modifier.fillMaxWidth())
+                                OutlinedTextField(startDay, { startDay = it.filter(Char::isDigit).take(2) }, label = { Text("계산 시작일 (1~31)") }, modifier = Modifier.fillMaxWidth())
+                                OutlinedTextField(target, { target = it.filter(Char::isDigit) }, label = { Text("실적 목표 (원)") }, modifier = Modifier.fillMaxWidth())
+                            }
                             Button(onClick = {
                                 onUpdateCardSettings(method, isCard, company, startDay.toIntOrNull() ?: 1, target.toLongOrNull() ?: 0)
                                 editingMethod = null
-                            }) { Text("카드 설정 저장") }
+                            }) { Text("설정 저장") }
                         }
                     }
                 }
@@ -1201,11 +1288,16 @@ private fun PaymentMethodManagerDialog(
                             error = null
                         },
                         label = { Text("새 결제수단 이름") },
-                        placeholder = { Text("예: 신한카드, 현금") },
+                        placeholder = { Text("예: 체크카드, 국민은행 통장, 계좌이체, 현금") },
                         singleLine = true,
                         isError = error != null,
                         supportingText = error?.let { message -> { Text(message) } },
                         modifier = Modifier.fillMaxWidth(),
+                    )
+                    Text(
+                        "계좌이체는 돈이 나간 통장 이름으로 등록하면 지출 경로를 더 정확히 확인할 수 있어요.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }

@@ -5,6 +5,8 @@ import androidx.room.ColumnInfo
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
+const val UNCLASSIFIED_PAYMENT_METHOD_NAME = "미분류"
+
 @Entity(
     tableName = "payment_methods",
     indices = [Index(value = ["name"], unique = true)],

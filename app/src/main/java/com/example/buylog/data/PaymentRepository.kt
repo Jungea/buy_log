@@ -77,10 +77,34 @@ class PaymentRepository(
         )
     }
 
+    suspend fun ensureUnclassifiedPaymentMethod(): PaymentMethodEntity {
+        val existing = paymentMethodDao.findByName(UNCLASSIFIED_PAYMENT_METHOD_NAME)
+        if (existing != null) {
+            if (existing.isCard || existing.cardCompany.isNotEmpty() || existing.periodStartDay != 1 || existing.performanceTarget != 0L) {
+                paymentMethodDao.updateCardSettings(existing.id, false, "", 1, 0)
+                return existing.copy(isCard = false, cardCompany = "", periodStartDay = 1, performanceTarget = 0)
+            }
+            return existing
+        }
+        paymentMethodDao.insert(
+            PaymentMethodEntity(name = UNCLASSIFIED_PAYMENT_METHOD_NAME, createdAt = clock.millis()),
+        )
+        return requireNotNull(paymentMethodDao.findByName(UNCLASSIFIED_PAYMENT_METHOD_NAME))
+    }
+
     suspend fun updateCardSettings(method: PaymentMethodEntity, isCard: Boolean, company: String, startDay: Int, target: Long) {
         require(startDay in 1..31) { "계산 시작일은 1~31일이어야 합니다." }
         require(target >= 0) { "실적 목표는 0원 이상이어야 합니다." }
         paymentMethodDao.updateCardSettings(method.id, isCard, company.trim(), startDay, target)
+    }
+
+    suspend fun deletePaymentMethod(method: PaymentMethodEntity, replacementMethodId: Long): Int {
+        require(method.name != UNCLASSIFIED_PAYMENT_METHOD_NAME) { "미분류 결제수단은 삭제할 수 없습니다." }
+        require(method.id != replacementMethodId) { "삭제할 결제수단과 이동할 결제수단은 달라야 합니다." }
+        val replacement = requireNotNull(paymentMethodDao.findById(replacementMethodId)) {
+            "이동할 결제수단을 찾을 수 없습니다."
+        }
+        return paymentMethodDao.deleteWithReassignment(method.id, replacement.id, clock.millis())
     }
 
     suspend fun addTag(name: String, exclude: Boolean): Long {

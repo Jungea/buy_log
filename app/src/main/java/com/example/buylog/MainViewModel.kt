@@ -57,6 +57,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         viewModelScope.launch {
+            runCatching { repository.ensureUnclassifiedPaymentMethod() }
+                .onFailure { messages.send("기본 미분류 결제수단을 준비하지 못했습니다.") }
             runCatching { repository.parseStoredNotificationEvents() }
                 .onFailure { messages.send("기존 알림의 파싱 결과를 갱신하지 못했습니다.") }
             runCatching { repository.processPendingCandidates() }
@@ -92,6 +94,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             runCatching { repository.updateCardSettings(method, isCard, company, startDay, target) }
                 .onFailure { messages.send(it.message ?: "카드 설정을 저장하지 못했습니다.") }
+        }
+    }
+
+    fun deletePaymentMethod(method: PaymentMethodEntity, replacement: PaymentMethodEntity) {
+        viewModelScope.launch {
+            runCatching { repository.deletePaymentMethod(method, replacement.id) }
+                .onSuccess { count -> messages.send("${method.name}을 삭제하고 결제 ${count}건의 결제수단을 변경했습니다: ${replacement.name}") }
+                .onFailure { messages.send(it.message ?: "결제수단을 삭제하지 못했습니다.") }
         }
     }
 
@@ -156,7 +166,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun restoreBackup(uri: Uri) {
         viewModelScope.launch {
-            runCatching { withContext(Dispatchers.IO) { backupManager.restoreFrom(uri) } }
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    backupManager.restoreFrom(uri)
+                    repository.ensureUnclassifiedPaymentMethod()
+                }
+            }
                 .onSuccess { messages.send("백업을 복원했습니다.") }
                 .onFailure { messages.send(it.message ?: "백업을 복원하지 못했습니다.") }
         }
