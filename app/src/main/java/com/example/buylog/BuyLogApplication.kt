@@ -11,6 +11,7 @@ class BuyLogApplication : Application() {
             paymentDao = database.paymentDao(),
             paymentMethodDao = database.paymentMethodDao(),
             notificationEventDao = database.notificationEventDao(),
+            tagDao = database.tagDao(),
         )
     }
 }

@@ -8,14 +8,15 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [PaymentEntity::class, PaymentMethodEntity::class, NotificationEventEntity::class],
-    version = 5,
+    entities = [PaymentEntity::class, PaymentMethodEntity::class, NotificationEventEntity::class, TagEntity::class, PaymentTagCrossRef::class],
+    version = 6,
     exportSchema = true,
 )
 abstract class BuyLogDatabase : RoomDatabase() {
     abstract fun paymentDao(): PaymentDao
     abstract fun paymentMethodDao(): PaymentMethodDao
     abstract fun notificationEventDao(): NotificationEventDao
+    abstract fun tagDao(): TagDao
 
     companion object {
         @Volatile
@@ -27,7 +28,7 @@ abstract class BuyLogDatabase : RoomDatabase() {
                     context.applicationContext,
                     BuyLogDatabase::class.java,
                     "buy-log.db",
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                     .build()
                     .also { instance = it }
             }
@@ -103,6 +104,15 @@ abstract class BuyLogDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE `notification_events` ADD COLUMN `paymentId` INTEGER")
                 db.execSQL("ALTER TABLE `notification_events` ADD COLUMN `suggestedPaymentId` INTEGER")
                 db.execSQL("UPDATE `notification_events` SET `registrationStatus` = 'PENDING' WHERE `parseStatus` = 'CANDIDATE'")
+            }
+        }
+
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS `tags` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `excludeFromSpending` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_tags_name` ON `tags` (`name`)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `payment_tags` (`paymentId` INTEGER NOT NULL, `tagId` INTEGER NOT NULL, PRIMARY KEY(`paymentId`, `tagId`))")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_payment_tags_tagId` ON `payment_tags` (`tagId`)")
             }
         }
     }

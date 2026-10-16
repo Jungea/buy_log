@@ -25,6 +25,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
@@ -36,6 +37,8 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -56,19 +59,25 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.buylog.MainViewModel
 import com.example.buylog.NotificationCaptureSettings
+import com.example.buylog.SpendingPreferences
 import com.example.buylog.data.NotificationEventEntity
 import com.example.buylog.data.PaymentDraft
 import com.example.buylog.data.PaymentEntity
 import com.example.buylog.data.PaymentMethodEntity
 import com.example.buylog.data.PaymentWithMethod
+import com.example.buylog.data.TagEntity
 import com.example.buylog.domain.PaymentSummary
 import com.example.buylog.domain.PaymentParseStatus
 import com.example.buylog.domain.CandidateRegistrationStatus
+import com.example.buylog.domain.PaymentSummaryCalculator
+import com.example.buylog.domain.SpendingPeriodCalculator
 import kotlinx.coroutines.flow.collectLatest
 import java.text.NumberFormat
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
+import java.time.YearMonth
+import java.time.Clock
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
 import java.util.Locale
@@ -93,7 +102,40 @@ fun BuyLogApp(viewModel: MainViewModel) {
     var showEditor by remember { mutableStateOf(false) }
     var showMethodManager by remember { mutableStateOf(false) }
     var showNotificationLog by remember { mutableStateOf(false) }
+    var showTagManager by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf<PaymentEntity?>(null) }
+    var page by rememberSaveable { mutableStateOf(0) }
+    var salaryMode by rememberSaveable { mutableStateOf(false) }
+    var periodOffset by rememberSaveable { mutableStateOf(0L) }
+    var payday by rememberSaveable { mutableStateOf(SpendingPreferences.getPayday(context).toString()) }
+    var search by rememberSaveable { mutableStateOf("") }
+    var selectedTagId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var selectedMethodId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var exclusionFilter by rememberSaveable { mutableStateOf(0) }
+    var customFrom by rememberSaveable { mutableStateOf("") }
+    var customTo by rememberSaveable { mutableStateOf("") }
+    val zoneId = ZoneId.systemDefault()
+    val period = if (salaryMode) {
+        SpendingPeriodCalculator.salaryCycle(Clock.systemDefaultZone().instant(), payday.toIntOrNull()?.coerceIn(1, 31) ?: 25, periodOffset, zoneId)
+    } else {
+        SpendingPeriodCalculator.calendarMonth(YearMonth.now(zoneId).plusMonths(periodOffset), zoneId)
+    }
+    val customFromMillis = customFrom.takeIf(String::isNotBlank)?.let { "$it 00:00".toEpochMillisOrNull() }
+    val customToMillis = customTo.takeIf(String::isNotBlank)?.let { "$it 23:59".toEpochMillisOrNull()?.plus(60_000) }
+    val effectiveFrom = if (page == 1) customFromMillis ?: period.fromInclusive else period.fromInclusive
+    val effectiveTo = if (page == 1) customToMillis ?: period.toExclusive else period.toExclusive
+    val periodPayments = state.payments.filter { it.payment.paidAt in effectiveFrom until effectiveTo }
+    val filteredPayments = periodPayments.filter { item ->
+        (search.isBlank() || item.payment.merchant.contains(search, ignoreCase = true)) &&
+            (selectedTagId == null || item.tags.any { it.id == selectedTagId }) &&
+            (selectedMethodId == null || item.paymentMethod.id == selectedMethodId) &&
+            when (exclusionFilter) {
+                1 -> item.tags.none { it.excludeFromSpending }
+                2 -> item.tags.any { it.excludeFromSpending }
+                else -> true
+            }
+    }
+    val periodSummary = PaymentSummaryCalculator.calculate(periodPayments)
 
     LaunchedEffect(viewModel) {
         viewModel.messageEvents.collectLatest { snackbarHostState.showSnackbar(it) }
@@ -110,10 +152,17 @@ fun BuyLogApp(viewModel: MainViewModel) {
                     TextButton(onClick = { showMethodManager = true }) {
                         Text("결제수단 관리")
                     }
+                    TextButton(onClick = { showTagManager = true }) { Text("태그") }
                 },
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
+        bottomBar = {
+            NavigationBar {
+                NavigationBarItem(selected = page == 0, onClick = { page = 0 }, icon = { Text("월간") })
+                NavigationBarItem(selected = page == 1, onClick = { page = 1 }, icon = { Text("결제 내역") })
+            }
+        },
         floatingActionButton = {
             FloatingActionButton(onClick = {
                 editing = null
@@ -126,7 +175,71 @@ fun BuyLogApp(viewModel: MainViewModel) {
             contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp, 8.dp, 16.dp, 96.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item { MonthSummaryCard(state.summary) }
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = !salaryMode, onClick = { salaryMode = false; periodOffset = 0 }, label = { Text("달력 월") })
+                    FilterChip(selected = salaryMode, onClick = { salaryMode = true; periodOffset = 0 }, label = { Text("월급 주기") })
+                }
+            }
+            item {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                    TextButton(onClick = { periodOffset-- }) { Text("이전") }
+                    Text(period.label, fontWeight = FontWeight.Bold)
+                    TextButton(onClick = { periodOffset++ }) { Text("다음") }
+                }
+            }
+            if (salaryMode) item {
+                OutlinedTextField(value = payday, onValueChange = {
+                    payday = it.filter(Char::isDigit).take(2)
+                    payday.toIntOrNull()?.takeIf { day -> day in 1..31 }?.let { day -> SpendingPreferences.setPayday(context, day) }
+                }, label = { Text("월급일 (1~31)") }, singleLine = true)
+            }
+            item { MonthSummaryCard(periodSummary) }
+            if (page == 1) {
+                item { OutlinedTextField(value = search, onValueChange = { search = it }, label = { Text("가맹점 검색") }, modifier = Modifier.fillMaxWidth()) }
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(value = customFrom, onValueChange = { customFrom = it }, label = { Text("시작일 yyyy-MM-dd") }, modifier = Modifier.weight(1f))
+                        OutlinedTextField(value = customTo, onValueChange = { customTo = it }, label = { Text("종료일 yyyy-MM-dd") }, modifier = Modifier.weight(1f))
+                    }
+                }
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        FilterChip(selected = exclusionFilter == 0, onClick = { exclusionFilter = 0 }, label = { Text("전체") })
+                        FilterChip(selected = exclusionFilter == 1, onClick = { exclusionFilter = 1 }, label = { Text("집계 포함") })
+                        FilterChip(selected = exclusionFilter == 2, onClick = { exclusionFilter = 2 }, label = { Text("집계 제외") })
+                    }
+                }
+                item {
+                    LazyColumn(Modifier.height(100.dp)) {
+                        item { FilterChip(selected = selectedMethodId == null, onClick = { selectedMethodId = null }, label = { Text("모든 결제수단") }) }
+                        items(state.methods) { method -> FilterChip(selected = selectedMethodId == method.id, onClick = { selectedMethodId = method.id }, label = { Text(method.name) }) }
+                    }
+                }
+                item {
+                    LazyColumn(Modifier.height(100.dp)) {
+                        item { FilterChip(selected = selectedTagId == null, onClick = { selectedTagId = null }, label = { Text("모든 태그") }) }
+                        items(state.tags) { tag -> FilterChip(selected = selectedTagId == tag.id, onClick = { selectedTagId = tag.id }, label = { Text(tag.name) }) }
+                    }
+                }
+                item { Text("필터 결과 ${filteredPayments.size}건 · ${filteredPayments.sumOf { it.payment.amount }.asWon()}", fontWeight = FontWeight.SemiBold) }
+            }
+            if (page == 0 && periodPayments.isNotEmpty()) {
+                item {
+                    val merchantTotals = periodPayments.groupBy { it.payment.merchant }.mapValues { it.value.sumOf { row -> row.payment.amount } }.entries.sortedByDescending { it.value }.take(5)
+                    Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp)) {
+                        Text("많이 사용한 곳", fontWeight = FontWeight.Bold)
+                        merchantTotals.forEach { Text("${it.key}  ${it.value.asWon()}") }
+                    } }
+                }
+                item {
+                    val methodTotals = periodPayments.groupBy { it.paymentMethod.name }.mapValues { it.value.sumOf { row -> row.payment.amount } }.entries.sortedByDescending { it.value }
+                    Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp)) {
+                        Text("결제수단별", fontWeight = FontWeight.Bold)
+                        methodTotals.forEach { Text("${it.key}  ${it.value.asWon()}") }
+                    } }
+                }
+            }
             item {
                 Text(
                     text = "최근 결제",
@@ -135,10 +248,11 @@ fun BuyLogApp(viewModel: MainViewModel) {
                     modifier = Modifier.padding(top = 8.dp),
                 )
             }
-            if (state.payments.isEmpty()) {
+            val visiblePayments = if (page == 0) periodPayments else filteredPayments
+            if (visiblePayments.isEmpty()) {
                 item { EmptyPayments() }
             } else {
-                items(state.payments, key = { it.payment.id }) { item ->
+                items(visiblePayments, key = { it.payment.id }) { item ->
                     PaymentRow(
                         item = item,
                         onEdit = {
@@ -156,6 +270,7 @@ fun BuyLogApp(viewModel: MainViewModel) {
         PaymentEditorDialog(
             existing = editing,
             methods = state.methods,
+            tags = state.tags,
             onDismiss = { showEditor = false },
             onSave = { draft ->
                 viewModel.save(draft, editing?.payment)
@@ -170,6 +285,10 @@ fun BuyLogApp(viewModel: MainViewModel) {
             onDismiss = { showMethodManager = false },
             onAddMethod = viewModel::addPaymentMethod,
         )
+    }
+
+    if (showTagManager) {
+        TagManagerDialog(state.tags, { showTagManager = false }, viewModel::addTag, viewModel::updateTag, viewModel::deleteTag)
     }
 
     if (showNotificationLog) {
@@ -418,12 +537,13 @@ private fun MonthSummaryCard(summary: PaymentSummary) {
         shape = RoundedCornerShape(24.dp),
     ) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("이번 달", style = MaterialTheme.typography.titleMedium)
+            Text("선택 기간", style = MaterialTheme.typography.titleMedium)
             Text(
-                text = summary.totalAmount.asWon(),
+                text = "실제 소비 ${summary.actualSpending.asWon()}",
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
             )
+            Text("전체 ${summary.totalAmount.asWon()} · 제외 ${summary.excludedAmount.asWon()}")
         }
     }
 }
@@ -470,6 +590,7 @@ private fun PaymentRow(
                 HorizontalDivider()
                 Text(item.payment.memo, style = MaterialTheme.typography.bodySmall)
             }
+            if (item.tags.isNotEmpty()) Text(item.tags.joinToString(" · ") { "#${it.name}" }, style = MaterialTheme.typography.labelSmall)
         }
     }
 }
@@ -478,6 +599,7 @@ private fun PaymentRow(
 private fun PaymentEditorDialog(
     existing: PaymentWithMethod?,
     methods: List<PaymentMethodEntity>,
+    tags: List<TagEntity>,
     onDismiss: () -> Unit,
     onSave: (PaymentDraft) -> Unit,
 ) {
@@ -495,6 +617,9 @@ private fun PaymentEditorDialog(
     }
     var memo by rememberSaveable(existing?.payment?.id) {
         mutableStateOf(existing?.payment?.memo.orEmpty())
+    }
+    var selectedTagIds by rememberSaveable(existing?.payment?.id) {
+        mutableStateOf(existing?.tags?.map { it.id }?.toSet() ?: emptySet())
     }
     var methodMenuExpanded by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -517,6 +642,19 @@ private fun PaymentEditorDialog(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
+                }
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("태그", style = MaterialTheme.typography.labelLarge)
+                        if (tags.isEmpty()) Text("상단 태그 관리에서 태그를 추가해 주세요.", style = MaterialTheme.typography.bodySmall)
+                        tags.forEach { tag ->
+                            FilterChip(
+                                selected = tag.id in selectedTagIds,
+                                onClick = { selectedTagIds = if (tag.id in selectedTagIds) selectedTagIds - tag.id else selectedTagIds + tag.id },
+                                label = { Text(if (tag.excludeFromSpending) "${tag.name} · 집계 제외" else tag.name) },
+                            )
+                        }
+                    }
                 }
                 item {
                     OutlinedTextField(
@@ -629,12 +767,62 @@ private fun PaymentEditorDialog(
                             paidAt = parsedPaidAt!!,
                             paymentMethodId = methodId!!,
                             memo = memo,
+                            tagIds = selectedTagIds,
                         ),
                     )
                 }
             }) { Text("저장") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
+    )
+}
+
+@Composable
+private fun TagManagerDialog(
+    tags: List<TagEntity>,
+    onDismiss: () -> Unit,
+    onAdd: (String, Boolean) -> Unit,
+    onUpdate: (TagEntity, String, Boolean) -> Unit,
+    onDelete: (TagEntity) -> Unit,
+) {
+    var name by rememberSaveable { mutableStateOf("") }
+    var exclude by rememberSaveable { mutableStateOf(false) }
+    var editing by remember { mutableStateOf<TagEntity?>(null) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("태그 관리") },
+        text = {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(tags, key = { it.id }) { tag ->
+                    Card(Modifier.fillMaxWidth()) {
+                        Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(tag.name, fontWeight = FontWeight.SemiBold)
+                                Text(if (tag.excludeFromSpending) "소비 집계 제외" else "소비 집계 포함", style = MaterialTheme.typography.bodySmall)
+                            }
+                            TextButton(onClick = { editing = tag; name = tag.name; exclude = tag.excludeFromSpending }) { Text("수정") }
+                            TextButton(onClick = { onDelete(tag) }) { Text("삭제") }
+                        }
+                    }
+                }
+                item { OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("태그 이름") }, modifier = Modifier.fillMaxWidth()) }
+                item {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("소비 집계 제외", modifier = Modifier.weight(1f))
+                        Switch(checked = exclude, onCheckedChange = { exclude = it })
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                if (name.isNotBlank()) {
+                    editing?.let { onUpdate(it, name, exclude) } ?: onAdd(name, exclude)
+                    editing = null; name = ""; exclude = false
+                }
+            }) { Text(if (editing == null) "추가" else "저장") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
     )
 }
 

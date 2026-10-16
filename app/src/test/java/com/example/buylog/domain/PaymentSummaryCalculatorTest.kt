@@ -3,6 +3,7 @@ package com.example.buylog.domain
 import com.example.buylog.data.PaymentEntity
 import com.example.buylog.data.PaymentMethodEntity
 import com.example.buylog.data.PaymentWithMethod
+import com.example.buylog.data.TagEntity
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -18,7 +19,7 @@ class PaymentSummaryCalculatorTest {
         )
 
         assertEquals(
-            PaymentSummary(totalAmount = 15_000),
+            PaymentSummary(totalAmount = 15_000, actualSpending = 15_000),
             PaymentSummaryCalculator.calculate(payments),
         )
     }
@@ -26,6 +27,16 @@ class PaymentSummaryCalculatorTest {
     @Test
     fun `empty payments produce zero summary`() {
         assertEquals(PaymentSummary(), PaymentSummaryCalculator.calculate(emptyList()))
+    }
+
+    @Test
+    fun `excluded tag removes payment from actual spending once`() {
+        val excluded = TagEntity(1, "테스트", true, 0)
+        val item = payment(10_000).copy(tags = listOf(excluded, excluded.copy(id = 2)))
+        assertEquals(
+            PaymentSummary(totalAmount = 10_000, actualSpending = 0, excludedAmount = 10_000),
+            PaymentSummaryCalculator.calculate(listOf(item)),
+        )
     }
 
     private fun payment(amount: Long) = PaymentWithMethod(
@@ -40,5 +51,6 @@ class PaymentSummaryCalculatorTest {
             updatedAt = 0,
         ),
         paymentMethod = method,
+        tags = emptyList(),
     )
 }

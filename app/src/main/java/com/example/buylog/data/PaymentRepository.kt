@@ -18,6 +18,7 @@ class PaymentRepository(
     private val paymentDao: PaymentDao,
     private val paymentMethodDao: PaymentMethodDao,
     private val notificationEventDao: NotificationEventDao,
+    private val tagDao: TagDao,
     private val clock: Clock = Clock.systemDefaultZone(),
     private val zoneId: ZoneId = ZoneId.systemDefault(),
 ) {
@@ -31,6 +32,8 @@ class PaymentRepository(
     fun observeAllPayments(): Flow<List<PaymentWithMethod>> = paymentDao.observeAllPayments()
 
     fun observePaymentMethods(): Flow<List<PaymentMethodEntity>> = paymentMethodDao.observeAll()
+
+    fun observeTags(): Flow<List<TagEntity>> = tagDao.observeAll()
 
     fun observeNotificationEvents(): Flow<List<NotificationEventEntity>> =
         notificationEventDao.observeLatest()
@@ -50,7 +53,12 @@ class PaymentRepository(
             createdAt = existing?.createdAt ?: now,
             updatedAt = now,
         )
-        if (existing == null) paymentDao.insert(entity) else paymentDao.update(entity)
+        val paymentId = if (existing == null) paymentDao.insert(entity) else {
+            paymentDao.update(entity)
+            existing.id
+        }
+        tagDao.clearPaymentTags(paymentId)
+        tagDao.insertPaymentTags(draft.tagIds.map { PaymentTagCrossRef(paymentId, it) })
     }
 
     suspend fun deletePayment(payment: PaymentEntity) = paymentDao.delete(payment)
@@ -60,6 +68,21 @@ class PaymentRepository(
         return paymentMethodDao.insert(
             PaymentMethodEntity(name = name.trim(), createdAt = clock.millis()),
         )
+    }
+
+    suspend fun addTag(name: String, exclude: Boolean): Long {
+        require(name.isNotBlank()) { "태그 이름을 입력해 주세요." }
+        return tagDao.insert(TagEntity(name = name.trim(), excludeFromSpending = exclude, createdAt = clock.millis()))
+    }
+
+    suspend fun updateTag(tag: TagEntity, name: String, exclude: Boolean) {
+        require(name.isNotBlank()) { "태그 이름을 입력해 주세요." }
+        tagDao.update(tag.id, name.trim(), exclude)
+    }
+
+    suspend fun deleteTag(tag: TagEntity) {
+        tagDao.clearTagAssignments(tag.id)
+        tagDao.delete(tag.id)
     }
 
     suspend fun recordNotificationEvent(draft: NotificationEventDraft) {
@@ -193,6 +216,7 @@ data class PaymentDraft(
     val paidAt: Long,
     val paymentMethodId: Long,
     val memo: String,
+    val tagIds: Set<Long> = emptySet(),
 )
 
 data class NotificationEventDraft(

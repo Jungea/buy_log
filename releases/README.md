@@ -8,7 +8,7 @@
 | 0.2 | 완료 | 앱 Push 및 SMS Notification 원문 수집·디버그 로그 | [상세](0.2.md) · [디버그 APK 다운로드](https://github.com/Jungea/buy_log/raw/refs/heads/main/releases/0.2/buy-log-0.2.0-debug.apk) |
 | 0.3 | 완료 | 실제 알림 기반 결제 후보 파싱 | [상세](0.3.md) · [디버그 APK 다운로드](https://github.com/Jungea/buy_log/raw/refs/heads/main/releases/0.3/buy-log-0.3.0-debug.apk) |
 | 0.4 | 완료 | 자동 등록 및 중복 처리 | [상세](0.4.md) · [디버그 APK 다운로드](https://github.com/Jungea/buy_log/raw/refs/heads/main/releases/0.4/buy-log-0.4.0-debug.apk) |
-| 0.5 | 계획 | 월별·월급 주기 현황, 결제 내역·필터, 태그별 소비 집계 제외 | [0.5.md](0.5.md) |
+| 0.5 | 완료 | 월별·월급 주기 현황, 결제 내역·필터, 태그별 소비 집계 제외 | [상세](0.5.md) · [디버그 APK 다운로드](https://github.com/Jungea/buy_log/raw/refs/heads/main/releases/0.5/buy-log-0.5.0-debug.apk) |
 | 0.6 | 계획 | 카드별 계산 기간, 카드 사용 이력 및 실적 관리 | [0.6.md](0.6.md) |
 | 0.7 | 미착수 | 특정 문구 기반 자동 태그 규칙 | 요청 후 작성 |
 | 0.8 | 미착수 | 결제 패턴 분석 | 요청 후 작성 |

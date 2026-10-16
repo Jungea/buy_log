@@ -8,6 +8,7 @@ import com.example.buylog.data.PaymentEntity
 import com.example.buylog.data.PaymentMethodEntity
 import com.example.buylog.data.PaymentWithMethod
 import com.example.buylog.data.NotificationEventEntity
+import com.example.buylog.data.TagEntity
 import com.example.buylog.domain.PaymentSummary
 import com.example.buylog.domain.PaymentSummaryCalculator
 import kotlinx.coroutines.channels.Channel
@@ -21,6 +22,7 @@ data class MainUiState(
     val payments: List<PaymentWithMethod> = emptyList(),
     val methods: List<PaymentMethodEntity> = emptyList(),
     val summary: PaymentSummary = PaymentSummary(),
+    val tags: List<TagEntity> = emptyList(),
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -35,11 +37,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         repository.observeAllPayments(),
         repository.observeCurrentMonthPayments(),
         repository.observePaymentMethods(),
-    ) { allPayments, monthlyPayments, methods ->
+        repository.observeTags(),
+    ) { allPayments, monthlyPayments, methods, tags ->
         MainUiState(
             payments = allPayments,
             methods = methods,
             summary = PaymentSummaryCalculator.calculate(monthlyPayments),
+            tags = tags,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MainUiState())
 
@@ -74,6 +78,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 .onFailure { messages.send(it.message ?: "결제수단을 추가하지 못했습니다.") }
         }
+    }
+
+    fun addTag(name: String, exclude: Boolean) {
+        viewModelScope.launch {
+            runCatching { repository.addTag(name, exclude) }
+                .onFailure { messages.send(it.message ?: "태그를 추가하지 못했습니다.") }
+        }
+    }
+
+    fun updateTag(tag: TagEntity, name: String, exclude: Boolean) {
+        viewModelScope.launch {
+            runCatching { repository.updateTag(tag, name, exclude) }
+                .onFailure { messages.send(it.message ?: "태그를 수정하지 못했습니다.") }
+        }
+    }
+
+    fun deleteTag(tag: TagEntity) {
+        viewModelScope.launch { runCatching { repository.deleteTag(tag) } }
     }
 
     fun confirmDuplicateAsSame(event: NotificationEventEntity) {
