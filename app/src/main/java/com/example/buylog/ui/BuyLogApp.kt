@@ -62,6 +62,7 @@ import com.example.buylog.data.PaymentEntity
 import com.example.buylog.data.PaymentMethodEntity
 import com.example.buylog.data.PaymentWithMethod
 import com.example.buylog.domain.PaymentSummary
+import com.example.buylog.domain.PaymentParseStatus
 import kotlinx.coroutines.flow.collectLatest
 import java.text.NumberFormat
 import java.time.Instant
@@ -229,9 +230,11 @@ private fun NotificationLogDialog(
     onOpenSettings: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val candidateCount = events.count { it.parseStatus == PaymentParseStatus.CANDIDATE.name }
+    val reviewCount = events.count { it.parseStatus == PaymentParseStatus.NEEDS_REVIEW.name }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("알림 로그") },
+        title = { Text("알림 및 결제 후보") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Card(
@@ -251,7 +254,7 @@ private fun NotificationLogDialog(
                             fontWeight = FontWeight.SemiBold,
                         )
                         Text(
-                            "수집한 원문은 이 기기에만 저장되며, 아직 결제로 자동 등록하지 않습니다.",
+                            "원문과 파싱 결과는 이 기기에만 저장되며, 아직 결제로 자동 등록하지 않습니다.",
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }
@@ -284,6 +287,11 @@ private fun NotificationLogDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 } else {
+                    Text(
+                        "결제 후보 ${candidateCount}건 · 확인 필요 ${reviewCount}건",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
                     Text("최근 알림 ${events.size}건", style = MaterialTheme.typography.labelLarge)
                     LazyColumn(
                         modifier = Modifier.height(300.dp),
@@ -323,6 +331,35 @@ private fun NotificationEventRow(event: NotificationEventEntity) {
                 color = MaterialTheme.colorScheme.primary,
             )
             Text("패키지: ${event.packageName}", style = MaterialTheme.typography.labelSmall)
+            when (event.parseStatus) {
+                PaymentParseStatus.CANDIDATE.name -> {
+                    Text(
+                        "결제 후보 · ${event.parsedAmount?.asWon().orEmpty()}",
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    event.parsedMerchant?.let { Text("가맹점: $it", style = MaterialTheme.typography.bodySmall) }
+                    event.parsedPaidAt?.let { Text("결제 시각: ${it.asDebugDate()}", style = MaterialTheme.typography.bodySmall) }
+                    Text(
+                        "결제수단: ${event.parsedPaymentMethod ?: "확인 필요"}",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    if (event.parseMessage.isNotBlank()) {
+                        Text(event.parseMessage, style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+                PaymentParseStatus.NEEDS_REVIEW.name -> Text(
+                    "파싱 확인 필요 · ${event.parseMessage}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                PaymentParseStatus.NOT_PAYMENT.name -> Text(
+                    "결제 알림 아님",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                else -> Text("파싱 대기 중", style = MaterialTheme.typography.labelSmall)
+            }
             if (event.title.isNotBlank()) {
                 Text("제목: ${event.title}", style = MaterialTheme.typography.bodySmall)
             }

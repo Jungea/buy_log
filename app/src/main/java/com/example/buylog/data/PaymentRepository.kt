@@ -1,6 +1,9 @@
 package com.example.buylog.data
 
 import com.example.buylog.domain.MonthRange
+import com.example.buylog.domain.PaymentNotificationParser
+import com.example.buylog.domain.PaymentParseResult
+import com.example.buylog.domain.PaymentSourceEvent
 import kotlinx.coroutines.flow.Flow
 import java.time.Clock
 import java.time.ZoneId
@@ -12,6 +15,8 @@ class PaymentRepository(
     private val clock: Clock = Clock.systemDefaultZone(),
     private val zoneId: ZoneId = ZoneId.systemDefault(),
 ) {
+    private val notificationParser = PaymentNotificationParser(zoneId)
+
     fun observeCurrentMonthPayments(): Flow<List<PaymentWithMethod>> {
         val range = MonthRange.containing(clock.instant(), zoneId)
         return paymentDao.observePayments(range.fromInclusive, range.toExclusive)
@@ -52,6 +57,7 @@ class PaymentRepository(
     }
 
     suspend fun recordNotificationEvent(draft: NotificationEventDraft) {
+        val result = notificationParser.parse(draft.toPaymentSourceEvent())
         notificationEventDao.insert(
             NotificationEventEntity(
                 sourceType = draft.sourceType,
@@ -62,8 +68,24 @@ class PaymentRepository(
                 rawText = draft.rawText,
                 receivedAt = draft.receivedAt,
                 createdAt = clock.millis(),
-            ),
+            ).withParseResult(result),
         )
+    }
+
+    suspend fun parseStoredNotificationEvents() {
+        notificationEventDao.getUnprocessed().forEach { event ->
+            val result = notificationParser.parse(event.toPaymentSourceEvent())
+            val candidate = result.candidate
+            notificationEventDao.updateParseResult(
+                id = event.id,
+                status = result.status.name,
+                amount = candidate?.amount,
+                merchant = candidate?.merchant,
+                paidAt = candidate?.paidAt,
+                paymentMethod = candidate?.paymentMethod,
+                message = result.message,
+            )
+        }
     }
 }
 
@@ -84,3 +106,35 @@ data class NotificationEventDraft(
     val rawText: String,
     val receivedAt: Long,
 )
+
+private fun NotificationEventDraft.toPaymentSourceEvent(): PaymentSourceEvent = PaymentSourceEvent(
+    sourceType = sourceType,
+    packageName = packageName,
+    appName = appName,
+    title = title,
+    content = content,
+    rawText = rawText,
+    receivedAt = receivedAt,
+)
+
+private fun NotificationEventEntity.toPaymentSourceEvent(): PaymentSourceEvent = PaymentSourceEvent(
+    sourceType = sourceType,
+    packageName = packageName,
+    appName = appName,
+    title = title,
+    content = content,
+    rawText = rawText,
+    receivedAt = receivedAt,
+)
+
+private fun NotificationEventEntity.withParseResult(result: PaymentParseResult): NotificationEventEntity {
+    val candidate = result.candidate
+    return copy(
+        parseStatus = result.status.name,
+        parsedAmount = candidate?.amount,
+        parsedMerchant = candidate?.merchant,
+        parsedPaidAt = candidate?.paidAt,
+        parsedPaymentMethod = candidate?.paymentMethod,
+        parseMessage = result.message,
+    )
+}

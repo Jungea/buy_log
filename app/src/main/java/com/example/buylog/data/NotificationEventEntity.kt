@@ -1,5 +1,6 @@
 package com.example.buylog.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -18,4 +19,12 @@ data class NotificationEventEntity(
     val rawText: String,
     val receivedAt: Long,
     val createdAt: Long,
+    @ColumnInfo(defaultValue = "'UNPROCESSED'")
+    val parseStatus: String = "UNPROCESSED",
+    val parsedAmount: Long? = null,
+    val parsedMerchant: String? = null,
+    val parsedPaidAt: Long? = null,
+    val parsedPaymentMethod: String? = null,
+    @ColumnInfo(defaultValue = "''")
+    val parseMessage: String = "",
 )

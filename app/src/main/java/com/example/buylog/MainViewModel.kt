@@ -43,6 +43,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MainUiState())
 
+    init {
+        viewModelScope.launch {
+            runCatching { repository.parseStoredNotificationEvents() }
+                .onFailure { messages.send("기존 알림의 파싱 결과를 갱신하지 못했습니다.") }
+        }
+    }
+
     fun save(draft: PaymentDraft, existing: PaymentEntity?) {
         viewModelScope.launch {
             runCatching { repository.savePayment(draft, existing) }

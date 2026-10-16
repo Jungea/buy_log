@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [PaymentEntity::class, PaymentMethodEntity::class, NotificationEventEntity::class],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 abstract class BuyLogDatabase : RoomDatabase() {
@@ -27,7 +27,7 @@ abstract class BuyLogDatabase : RoomDatabase() {
                     context.applicationContext,
                     BuyLogDatabase::class.java,
                     "buy-log.db",
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .build()
                     .also { instance = it }
             }
@@ -82,6 +82,17 @@ abstract class BuyLogDatabase : RoomDatabase() {
                 )
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_notification_events_receivedAt` ON `notification_events` (`receivedAt`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_notification_events_packageName` ON `notification_events` (`packageName`)")
+            }
+        }
+
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `notification_events` ADD COLUMN `parseStatus` TEXT NOT NULL DEFAULT 'UNPROCESSED'")
+                db.execSQL("ALTER TABLE `notification_events` ADD COLUMN `parsedAmount` INTEGER")
+                db.execSQL("ALTER TABLE `notification_events` ADD COLUMN `parsedMerchant` TEXT")
+                db.execSQL("ALTER TABLE `notification_events` ADD COLUMN `parsedPaidAt` INTEGER")
+                db.execSQL("ALTER TABLE `notification_events` ADD COLUMN `parsedPaymentMethod` TEXT")
+                db.execSQL("ALTER TABLE `notification_events` ADD COLUMN `parseMessage` TEXT NOT NULL DEFAULT ''")
             }
         }
     }
