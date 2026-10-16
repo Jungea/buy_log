@@ -15,5 +15,6 @@
 | 0.9 | 완료 | 보수적인 결제 누락 확인 알림과 응답 | [상세](0.9.md) · [디버그 APK 다운로드](https://github.com/Jungea/buy_log/raw/refs/heads/main/releases/0.9/buy-log-0.9.0-debug.apk) |
 | 1.0 | 완료 | 실사용 안정화, 로컬 백업·복원 및 개인정보 보호 | [상세](1.0.md) · [디버그 APK 다운로드](https://github.com/Jungea/buy_log/raw/refs/heads/main/releases/1.0/buy-log-1.0.0-debug.apk) |
 | 1.0.1 | 완료 | 기본 미분류 수단과 연결 결제 이동형 결제수단 삭제 | [상세](1.0.1.md) · [디버그 APK 다운로드](https://github.com/Jungea/buy_log/raw/refs/heads/main/releases/1.0.1/buy-log-1.0.1-debug.apk) |
+| 1.0.2 | 완료 | 주말 월급일 보정과 월별 실제 월급일 지정 | [상세](1.0.2.md) · [디버그 APK 다운로드](https://github.com/Jungea/buy_log/raw/refs/heads/main/releases/1.0.2/buy-log-1.0.2-debug.apk) |
 
 완료된 릴리즈는 구현·검증 결과를 기록하고, 사용자가 범위를 확정한 후속 릴리즈는 계획 문서를 먼저 작성합니다.

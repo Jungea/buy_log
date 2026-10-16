@@ -143,6 +143,11 @@ fun BuyLogApp(viewModel: MainViewModel, addPaymentRequest: Int = 0) {
     var salaryMode by rememberSaveable { mutableStateOf(false) }
     var periodOffset by rememberSaveable { mutableStateOf(0L) }
     var payday by rememberSaveable { mutableStateOf(SpendingPreferences.getPayday(context).toString()) }
+    var moveWeekendPayday by rememberSaveable { mutableStateOf(SpendingPreferences.getMoveWeekendPayday(context)) }
+    var paydayOverrides by remember { mutableStateOf(SpendingPreferences.getPaydayOverrides(context)) }
+    var overrideMonth by rememberSaveable { mutableStateOf(YearMonth.now().toString()) }
+    var overrideDate by rememberSaveable { mutableStateOf("") }
+    var overrideError by remember { mutableStateOf<String?>(null) }
     var search by rememberSaveable { mutableStateOf("") }
     var selectedTagId by rememberSaveable { mutableStateOf<Long?>(null) }
     var selectedMethodId by rememberSaveable { mutableStateOf<Long?>(null) }
@@ -154,7 +159,14 @@ fun BuyLogApp(viewModel: MainViewModel, addPaymentRequest: Int = 0) {
     val zoneId = ZoneId.systemDefault()
     val spendingPage = page == 0 || page == 1
     val period = if (salaryMode) {
-        SpendingPeriodCalculator.salaryCycle(Clock.systemDefaultZone().instant(), payday.toIntOrNull()?.coerceIn(1, 31) ?: 25, periodOffset, zoneId)
+        SpendingPeriodCalculator.salaryCycle(
+            Clock.systemDefaultZone().instant(),
+            payday.toIntOrNull()?.coerceIn(1, 31) ?: 25,
+            periodOffset,
+            zoneId,
+            moveWeekendPayday,
+            paydayOverrides,
+        )
     } else {
         SpendingPeriodCalculator.calendarMonth(YearMonth.now(zoneId).plusMonths(periodOffset), zoneId)
     }
@@ -247,10 +259,86 @@ fun BuyLogApp(viewModel: MainViewModel, addPaymentRequest: Int = 0) {
                 }
             }
             if (spendingPage && salaryMode) item {
-                OutlinedTextField(value = payday, onValueChange = {
-                    payday = it.filter(Char::isDigit).take(2)
-                    payday.toIntOrNull()?.takeIf { day -> day in 1..31 }?.let { day -> SpendingPreferences.setPayday(context, day) }
-                }, label = { Text("월급일 (1~31)") }, singleLine = true)
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = payday,
+                        onValueChange = {
+                            payday = it.filter(Char::isDigit).take(2)
+                            payday.toIntOrNull()?.takeIf { day -> day in 1..31 }
+                                ?.let { day -> SpendingPreferences.setPayday(context, day) }
+                        },
+                        label = { Text("월급일 (1~31)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("주말이면 직전 평일로 조정", fontWeight = FontWeight.SemiBold)
+                            Text("토요일·일요일만 적용하며 공휴일은 자동 조정하지 않아요.", style = MaterialTheme.typography.bodySmall)
+                        }
+                        Switch(
+                            checked = moveWeekendPayday,
+                            onCheckedChange = { enabled ->
+                                moveWeekendPayday = enabled
+                                SpendingPreferences.setMoveWeekendPayday(context, enabled)
+                                periodOffset = 0
+                            },
+                        )
+                    }
+                    HorizontalDivider()
+                    Text("특정 달 실제 월급일", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "회사 휴무 등으로 입금일이 달라진 달만 지정하세요. 직접 지정일이 주말 보정보다 우선합니다.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    OutlinedTextField(
+                        value = overrideMonth,
+                        onValueChange = { overrideMonth = it; overrideError = null },
+                        label = { Text("대상 월 (yyyy-MM)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = overrideDate,
+                        onValueChange = { overrideDate = it; overrideError = null },
+                        label = { Text("실제 월급일 (yyyy-MM-dd)") },
+                        singleLine = true,
+                        isError = overrideError != null,
+                        supportingText = overrideError?.let { message -> { Text(message) } },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Button(onClick = {
+                        val month = runCatching { YearMonth.parse(overrideMonth) }.getOrNull()
+                        val date = runCatching { LocalDate.parse(overrideDate) }.getOrNull()
+                        overrideError = when {
+                            month == null -> "대상 월을 yyyy-MM 형식으로 입력해 주세요."
+                            date == null -> "실제 월급일을 yyyy-MM-dd 형식으로 입력해 주세요."
+                            YearMonth.from(date) != month -> "실제 월급일은 대상 월 안의 날짜여야 합니다."
+                            else -> null
+                        }
+                        if (overrideError == null) {
+                            SpendingPreferences.setPaydayOverride(context, month!!, date!!)
+                            paydayOverrides = SpendingPreferences.getPaydayOverrides(context)
+                            overrideDate = ""
+                            periodOffset = 0
+                        }
+                    }) { Text("지정일 저장") }
+                    paydayOverrides.entries.sortedByDescending { it.key }.forEach { (month, date) ->
+                        Card(Modifier.fillMaxWidth()) {
+                            Row(
+                                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text("$month · $date", Modifier.weight(1f))
+                                TextButton(onClick = {
+                                    SpendingPreferences.removePaydayOverride(context, month)
+                                    paydayOverrides = SpendingPreferences.getPaydayOverrides(context)
+                                    periodOffset = 0
+                                }) { Text("삭제") }
+                            }
+                        }
+                    }
+                }
             }
             if (spendingPage) item { MonthSummaryCard(periodSummary) }
             if (page == 1) {
