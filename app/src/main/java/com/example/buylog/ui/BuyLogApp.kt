@@ -74,6 +74,7 @@ import com.example.buylog.domain.PaymentSummaryCalculator
 import com.example.buylog.domain.SpendingPeriodCalculator
 import com.example.buylog.domain.CardPeriodCalculator
 import com.example.buylog.domain.CardPerformanceCalculator
+import com.example.buylog.domain.PaymentPatternAnalyzer
 import kotlinx.coroutines.flow.collectLatest
 import java.text.NumberFormat
 import java.time.Instant
@@ -81,6 +82,7 @@ import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.YearMonth
 import java.time.Clock
+import java.time.DayOfWeek
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
 import java.util.Locale
@@ -88,6 +90,7 @@ import java.util.Locale
 private val inputDateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
 private val displayDateFormatter = DateTimeFormatter.ofPattern("MM/dd HH:mm")
 private val debugDateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+private val patternDateFormatter = DateTimeFormatter.ofPattern("yyyy.MM.dd")
 private val moneyFormatter = NumberFormat.getNumberInstance(Locale.KOREA)
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -120,6 +123,7 @@ fun BuyLogApp(viewModel: MainViewModel) {
     var selectedCardId by rememberSaveable { mutableStateOf<Long?>(null) }
     var cardPeriodOffset by rememberSaveable { mutableStateOf(0L) }
     val zoneId = ZoneId.systemDefault()
+    val spendingPage = page == 0 || page == 1
     val period = if (salaryMode) {
         SpendingPeriodCalculator.salaryCycle(Clock.systemDefaultZone().instant(), payday.toIntOrNull()?.coerceIn(1, 31) ?: 25, periodOffset, zoneId)
     } else {
@@ -148,6 +152,11 @@ fun BuyLogApp(viewModel: MainViewModel) {
         it.paymentMethod.id == selectedCard.id && it.payment.paidAt in cardPeriod.fromInclusive until cardPeriod.toExclusive
     }
     val cardPerformance = CardPerformanceCalculator.calculate(cardPayments, selectedCard?.performanceTarget ?: 0)
+    val patternReport = PaymentPatternAnalyzer.analyze(
+        paidAtValues = state.payments.map { it.payment.paidAt },
+        now = Clock.systemDefaultZone().instant(),
+        zoneId = zoneId,
+    )
 
     LaunchedEffect(viewModel) {
         viewModel.messageEvents.collectLatest { snackbarHostState.showSnackbar(it) }
@@ -174,6 +183,7 @@ fun BuyLogApp(viewModel: MainViewModel) {
                 NavigationBarItem(selected = page == 0, onClick = { page = 0 }, icon = { Text("월간") })
                 NavigationBarItem(selected = page == 1, onClick = { page = 1 }, icon = { Text("결제 내역") })
                 NavigationBarItem(selected = page == 2, onClick = { page = 2 }, icon = { Text("카드") })
+                NavigationBarItem(selected = page == 3, onClick = { page = 3 }, icon = { Text("패턴") })
             }
         },
         floatingActionButton = {
@@ -188,26 +198,26 @@ fun BuyLogApp(viewModel: MainViewModel) {
             contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp, 8.dp, 16.dp, 96.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            if (page != 2) item {
+            if (spendingPage) item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(selected = !salaryMode, onClick = { salaryMode = false; periodOffset = 0 }, label = { Text("달력 월") })
                     FilterChip(selected = salaryMode, onClick = { salaryMode = true; periodOffset = 0 }, label = { Text("월급 주기") })
                 }
             }
-            if (page != 2) item {
+            if (spendingPage) item {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                     TextButton(onClick = { periodOffset-- }) { Text("이전") }
                     Text(period.label, fontWeight = FontWeight.Bold)
                     TextButton(onClick = { periodOffset++ }) { Text("다음") }
                 }
             }
-            if (page != 2 && salaryMode) item {
+            if (spendingPage && salaryMode) item {
                 OutlinedTextField(value = payday, onValueChange = {
                     payday = it.filter(Char::isDigit).take(2)
                     payday.toIntOrNull()?.takeIf { day -> day in 1..31 }?.let { day -> SpendingPreferences.setPayday(context, day) }
                 }, label = { Text("월급일 (1~31)") }, singleLine = true)
             }
-            if (page != 2) item { MonthSummaryCard(periodSummary) }
+            if (spendingPage) item { MonthSummaryCard(periodSummary) }
             if (page == 1) {
                 item { OutlinedTextField(value = search, onValueChange = { search = it }, label = { Text("가맹점 검색") }, modifier = Modifier.fillMaxWidth()) }
                 item {
@@ -285,27 +295,84 @@ fun BuyLogApp(viewModel: MainViewModel) {
                     }
                 }
             }
-            item {
-                Text(
-                    text = if (page == 2) "카드 사용 이력" else "최근 결제",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
-            }
-            val visiblePayments = when (page) { 0 -> periodPayments; 1 -> filteredPayments; else -> cardPayments }
-            if (visiblePayments.isEmpty()) {
-                item { EmptyPayments() }
-            } else {
-                items(visiblePayments, key = { it.payment.id }) { item ->
-                    PaymentRow(
-                        item = item,
-                        onEdit = {
-                            editing = item
-                            showEditor = true
-                        },
-                        onDelete = { deleting = item.payment },
+            if (page == 3) {
+                item {
+                    Text("결제 발생 패턴", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(
+                        "최근 최대 8주의 완료된 날짜를 2시간 단위로 분석합니다. 오늘 기록은 아직 하루가 끝나지 않아 제외합니다.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                }
+                if (!patternReport.hasSufficientData) {
+                    item {
+                        Card(Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text("아직 분석할 데이터가 부족해요", fontWeight = FontWeight.Bold)
+                                Text("같은 요일의 완료된 기록이 최소 ${patternReport.minimumObservedDays}일 쌓이면 패턴을 보여줍니다.")
+                            }
+                        }
+                    }
+                } else {
+                    item {
+                        Text(
+                            "분석 기간 ${patternReport.from?.format(patternDateFormatter)} ~ ${patternReport.through?.format(patternDateFormatter)}",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    items(patternReport.weekdays, key = { it.dayOfWeek }) { weekday ->
+                        Card(Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                                Text("${weekday.dayOfWeek.koreanName()} · 관찰 ${weekday.observedDays}일", fontWeight = FontWeight.Bold)
+                                if (weekday.patterns.isEmpty()) {
+                                    Text("50% 이상 반복된 시간대가 없습니다.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                } else {
+                                    weekday.patterns.forEach { pattern ->
+                                        Text(
+                                            "%02d:00~%02d:00  %d%% (%d/%d일)".format(
+                                                pattern.startHour,
+                                                pattern.endHour,
+                                                pattern.probabilityPercent,
+                                                pattern.occurrenceDays,
+                                                weekday.observedDays,
+                                            ),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    item {
+                        Text(
+                            "관찰일 4일 이상, 발생 확률 50% 이상인 시간대만 표시합니다. 이 결과는 통계이며 결제 누락 알림은 Release 0.9에서 제공합니다.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            } else {
+                item {
+                    Text(
+                        text = if (page == 2) "카드 사용 이력" else "최근 결제",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
+                val visiblePayments = when (page) { 0 -> periodPayments; 1 -> filteredPayments; else -> cardPayments }
+                if (visiblePayments.isEmpty()) {
+                    item { EmptyPayments() }
+                } else {
+                    items(visiblePayments, key = { it.payment.id }) { item ->
+                        PaymentRow(
+                            item = item,
+                            onEdit = {
+                                editing = item
+                                showEditor = true
+                            },
+                            onDelete = { deleting = item.payment },
+                        )
+                    }
                 }
             }
         }
@@ -1059,6 +1126,16 @@ private fun PaymentMethodManagerDialog(
 }
 
 private fun Long.asWon(): String = "${moneyFormatter.format(this)}원"
+
+private fun DayOfWeek.koreanName(): String = when (this) {
+    DayOfWeek.MONDAY -> "월요일"
+    DayOfWeek.TUESDAY -> "화요일"
+    DayOfWeek.WEDNESDAY -> "수요일"
+    DayOfWeek.THURSDAY -> "목요일"
+    DayOfWeek.FRIDAY -> "금요일"
+    DayOfWeek.SATURDAY -> "토요일"
+    DayOfWeek.SUNDAY -> "일요일"
+}
 
 private fun Long.asDisplayDate(): String = Instant.ofEpochMilli(this)
     .atZone(ZoneId.systemDefault())
