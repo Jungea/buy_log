@@ -12,7 +12,7 @@
 | 0.6 | 완료 | 카드별 계산 기간, 카드 사용 이력 및 실적 관리 | [상세](0.6.md) · [디버그 APK 다운로드](https://github.com/Jungea/buy_log/raw/refs/heads/main/releases/0.6/buy-log-0.6.0-debug.apk) |
 | 0.7 | 완료 | 특정 문구 기반 자동 태그 규칙 | [상세](0.7.md) · [디버그 APK 다운로드](https://github.com/Jungea/buy_log/raw/refs/heads/main/releases/0.7/buy-log-0.7.0-debug.apk) |
 | 0.8 | 완료 | 요일·시간대별 결제 패턴 분석 | [상세](0.8.md) · [디버그 APK 다운로드](https://github.com/Jungea/buy_log/raw/refs/heads/main/releases/0.8/buy-log-0.8.0-debug.apk) |
-| 0.9 | 미착수 | 결제 누락 알림 | 요청 후 작성 |
+| 0.9 | 완료 | 보수적인 결제 누락 확인 알림과 응답 | [상세](0.9.md) · [디버그 APK 다운로드](https://github.com/Jungea/buy_log/raw/refs/heads/main/releases/0.9/buy-log-0.9.0-debug.apk) |
 | 1.0 | 미착수 | 실사용 안정화 | 요청 후 작성 |
 
 완료된 릴리즈는 구현·검증 결과를 기록하고, 사용자가 범위를 확정한 후속 릴리즈는 계획 문서를 먼저 작성합니다.

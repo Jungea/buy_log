@@ -5,6 +5,11 @@ import com.example.buylog.data.BuyLogDatabase
 import com.example.buylog.data.PaymentRepository
 
 class BuyLogApplication : Application() {
+    override fun onCreate() {
+        super.onCreate()
+        if (MissedPaymentPreferences.isEnabled(this)) MissedPaymentScheduler.schedule(this)
+    }
+
     val repository: PaymentRepository by lazy {
         val database = BuyLogDatabase.getInstance(this)
         PaymentRepository(

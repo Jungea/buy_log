@@ -10,6 +10,9 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface PaymentDao {
+    @Query("SELECT paidAt FROM payments ORDER BY paidAt")
+    suspend fun getAllPaidAt(): List<Long>
+
     @Transaction
     @Query("SELECT * FROM payments ORDER BY paidAt DESC, id DESC")
     fun observeAllPayments(): Flow<List<PaymentWithMethod>>

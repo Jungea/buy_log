@@ -12,8 +12,8 @@ android {
         applicationId = "com.example.buylog"
         minSdk = 26
         targetSdk = 37
-        versionCode = 8
-        versionName = "0.8.0"
+        versionCode = 9
+        versionName = "0.9.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -55,6 +55,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.11.0")
+    implementation("androidx.work:work-runtime:2.12.0")
 
     val roomVersion = "2.8.5"
     implementation("androidx.room:room-runtime:$roomVersion")

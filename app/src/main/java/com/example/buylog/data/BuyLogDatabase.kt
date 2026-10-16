@@ -8,8 +8,8 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [PaymentEntity::class, PaymentMethodEntity::class, NotificationEventEntity::class, TagEntity::class, PaymentTagCrossRef::class, AutoTagRuleEntity::class],
-    version = 8,
+    entities = [PaymentEntity::class, PaymentMethodEntity::class, NotificationEventEntity::class, TagEntity::class, PaymentTagCrossRef::class, AutoTagRuleEntity::class, MissedPaymentCheckEntity::class],
+    version = 9,
     exportSchema = true,
 )
 abstract class BuyLogDatabase : RoomDatabase() {
@@ -18,6 +18,7 @@ abstract class BuyLogDatabase : RoomDatabase() {
     abstract fun notificationEventDao(): NotificationEventDao
     abstract fun tagDao(): TagDao
     abstract fun autoTagRuleDao(): AutoTagRuleDao
+    abstract fun missedPaymentCheckDao(): MissedPaymentCheckDao
 
     companion object {
         @Volatile
@@ -29,7 +30,7 @@ abstract class BuyLogDatabase : RoomDatabase() {
                     context.applicationContext,
                     BuyLogDatabase::class.java,
                     "buy-log.db",
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
                     .build()
                     .also { instance = it }
             }
@@ -132,6 +133,13 @@ abstract class BuyLogDatabase : RoomDatabase() {
                 db.execSQL("CREATE TABLE IF NOT EXISTS `auto_tag_rules` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `phrase` TEXT NOT NULL, `tagId` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL)")
                 db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_auto_tag_rules_phrase_tagId` ON `auto_tag_rules` (`phrase`, `tagId`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_auto_tag_rules_tagId` ON `auto_tag_rules` (`tagId`)")
+            }
+        }
+
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS `missed_payment_checks` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `dateEpochDay` INTEGER NOT NULL, `startHour` INTEGER NOT NULL, `endHour` INTEGER NOT NULL, `probabilityPercent` INTEGER NOT NULL, `status` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `respondedAt` INTEGER)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_missed_payment_checks_dateEpochDay` ON `missed_payment_checks` (`dateEpochDay`)")
             }
         }
     }

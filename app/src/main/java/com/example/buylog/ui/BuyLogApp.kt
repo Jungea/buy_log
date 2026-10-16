@@ -1,9 +1,14 @@
 package com.example.buylog.ui
 
+import android.Manifest
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -53,12 +58,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.buylog.MainViewModel
 import com.example.buylog.NotificationCaptureSettings
+import com.example.buylog.MissedPaymentPreferences
 import com.example.buylog.SpendingPreferences
 import com.example.buylog.data.NotificationEventEntity
 import com.example.buylog.data.PaymentDraft
@@ -95,13 +102,22 @@ private val moneyFormatter = NumberFormat.getNumberInstance(Locale.KOREA)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BuyLogApp(viewModel: MainViewModel) {
+fun BuyLogApp(viewModel: MainViewModel, addPaymentRequest: Int = 0) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val notificationEvents by viewModel.notificationEvents.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val notificationAccessEnabled = rememberNotificationAccessEnabled()
     var notificationCaptureEnabled by remember {
         mutableStateOf(NotificationCaptureSettings.isEnabled(context))
+    }
+    var missedPaymentNotificationsEnabled by remember {
+        mutableStateOf(MissedPaymentPreferences.isEnabled(context))
+    }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        missedPaymentNotificationsEnabled = granted
+        MissedPaymentPreferences.setEnabled(context, granted)
     }
     val snackbarHostState = remember { SnackbarHostState() }
     var editing by remember { mutableStateOf<PaymentWithMethod?>(null) }
@@ -160,6 +176,12 @@ fun BuyLogApp(viewModel: MainViewModel) {
 
     LaunchedEffect(viewModel) {
         viewModel.messageEvents.collectLatest { snackbarHostState.showSnackbar(it) }
+    }
+    LaunchedEffect(addPaymentRequest) {
+        if (addPaymentRequest > 0) {
+            editing = null
+            showEditor = true
+        }
     }
 
     Scaffold(
@@ -297,6 +319,29 @@ fun BuyLogApp(viewModel: MainViewModel) {
             }
             if (page == 3) {
                 item {
+                    Card(Modifier.fillMaxWidth()) {
+                        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("결제 누락 알림", fontWeight = FontWeight.Bold)
+                                Text("강한 패턴 시간대에 기록이 없을 때 하루 한 번만 확인합니다.", style = MaterialTheme.typography.bodySmall)
+                            }
+                            Switch(
+                                checked = missedPaymentNotificationsEnabled,
+                                onCheckedChange = { enabled ->
+                                    if (enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                                        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                                    ) {
+                                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                    } else {
+                                        missedPaymentNotificationsEnabled = enabled
+                                        MissedPaymentPreferences.setEnabled(context, enabled)
+                                    }
+                                },
+                            )
+                        }
+                    }
+                }
+                item {
                     Text("결제 발생 패턴", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     Text(
                         "최근 최대 8주의 완료된 날짜를 2시간 단위로 분석합니다. 오늘 기록은 아직 하루가 끝나지 않아 제외합니다.",
@@ -344,7 +389,7 @@ fun BuyLogApp(viewModel: MainViewModel) {
                     }
                     item {
                         Text(
-                            "관찰일 4일 이상, 발생 확률 50% 이상인 시간대만 표시합니다. 이 결과는 통계이며 결제 누락 알림은 Release 0.9에서 제공합니다.",
+                            "통계 화면은 관찰일 4일 이상·발생률 50% 이상을 표시합니다. 누락 알림은 더 보수적으로 관찰일 6일 이상·발생률 70% 이상일 때만 동작합니다.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
