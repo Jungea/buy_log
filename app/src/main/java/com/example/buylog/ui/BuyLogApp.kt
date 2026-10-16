@@ -63,6 +63,7 @@ import com.example.buylog.data.PaymentMethodEntity
 import com.example.buylog.data.PaymentWithMethod
 import com.example.buylog.domain.PaymentSummary
 import com.example.buylog.domain.PaymentParseStatus
+import com.example.buylog.domain.CandidateRegistrationStatus
 import kotlinx.coroutines.flow.collectLatest
 import java.text.NumberFormat
 import java.time.Instant
@@ -174,6 +175,7 @@ fun BuyLogApp(viewModel: MainViewModel) {
     if (showNotificationLog) {
         NotificationLogDialog(
             events = notificationEvents,
+            payments = state.payments,
             notificationAccessEnabled = notificationAccessEnabled,
             notificationCaptureEnabled = notificationCaptureEnabled,
             onCaptureEnabledChange = { enabled ->
@@ -183,6 +185,8 @@ fun BuyLogApp(viewModel: MainViewModel) {
             onOpenSettings = {
                 context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
             },
+            onConfirmDuplicateAsSame = viewModel::confirmDuplicateAsSame,
+            onConfirmDuplicateAsSeparate = viewModel::confirmDuplicateAsSeparate,
             onDismiss = { showNotificationLog = false },
         )
     }
@@ -224,14 +228,18 @@ private fun rememberNotificationAccessEnabled(): Boolean {
 @Composable
 private fun NotificationLogDialog(
     events: List<NotificationEventEntity>,
+    payments: List<PaymentWithMethod>,
     notificationAccessEnabled: Boolean,
     notificationCaptureEnabled: Boolean,
     onCaptureEnabledChange: (Boolean) -> Unit,
     onOpenSettings: () -> Unit,
+    onConfirmDuplicateAsSame: (NotificationEventEntity) -> Unit,
+    onConfirmDuplicateAsSeparate: (NotificationEventEntity) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val candidateCount = events.count { it.parseStatus == PaymentParseStatus.CANDIDATE.name }
     val reviewCount = events.count { it.parseStatus == PaymentParseStatus.NEEDS_REVIEW.name }
+    val duplicateCount = events.count { it.registrationStatus == CandidateRegistrationStatus.DUPLICATE_CANDIDATE.name }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("알림 및 결제 후보") },
@@ -288,7 +296,7 @@ private fun NotificationLogDialog(
                     )
                 } else {
                     Text(
-                        "결제 후보 ${candidateCount}건 · 확인 필요 ${reviewCount}건",
+                        "결제 후보 ${candidateCount}건 · 파싱 확인 ${reviewCount}건 · 중복 확인 ${duplicateCount}건",
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.primary,
                     )
@@ -298,7 +306,12 @@ private fun NotificationLogDialog(
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         items(events, key = { it.id }) { event ->
-                            NotificationEventRow(event)
+                            NotificationEventRow(
+                                event = event,
+                                suggestedPayment = payments.firstOrNull { it.payment.id == event.suggestedPaymentId },
+                                onConfirmDuplicateAsSame = { onConfirmDuplicateAsSame(event) },
+                                onConfirmDuplicateAsSeparate = { onConfirmDuplicateAsSeparate(event) },
+                            )
                         }
                     }
                 }
@@ -314,7 +327,12 @@ private fun NotificationLogDialog(
 }
 
 @Composable
-private fun NotificationEventRow(event: NotificationEventEntity) {
+private fun NotificationEventRow(
+    event: NotificationEventEntity,
+    suggestedPayment: PaymentWithMethod?,
+    onConfirmDuplicateAsSame: () -> Unit,
+    onConfirmDuplicateAsSeparate: () -> Unit,
+) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -346,6 +364,30 @@ private fun NotificationEventRow(event: NotificationEventEntity) {
                     )
                     if (event.parseMessage.isNotBlank()) {
                         Text(event.parseMessage, style = MaterialTheme.typography.labelSmall)
+                    }
+                    when (event.registrationStatus) {
+                        CandidateRegistrationStatus.REGISTERED.name -> Text(
+                            if (event.duplicateConfidence == "HIGH") "같은 결제로 자동 연결됨"
+                            else "결제로 자동 등록됨",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        CandidateRegistrationStatus.DUPLICATE_CANDIDATE.name -> {
+                            Text(
+                                "중복 가능성 확인 필요: ${suggestedPayment?.payment?.merchant ?: "기존 결제"}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                            Row {
+                                TextButton(onClick = onConfirmDuplicateAsSame) { Text("같은 결제") }
+                                TextButton(onClick = onConfirmDuplicateAsSeparate) { Text("별도 결제") }
+                            }
+                        }
+                        CandidateRegistrationStatus.NEEDS_PAYMENT_METHOD.name -> Text(
+                            "결제수단을 읽지 못해 자동 등록하지 않았습니다.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
                     }
                 }
                 PaymentParseStatus.NEEDS_REVIEW.name -> Text(

@@ -4,6 +4,12 @@ import com.example.buylog.domain.MonthRange
 import com.example.buylog.domain.PaymentNotificationParser
 import com.example.buylog.domain.PaymentParseResult
 import com.example.buylog.domain.PaymentSourceEvent
+import com.example.buylog.domain.PaymentCandidate
+import com.example.buylog.domain.PaymentDuplicateDetector
+import com.example.buylog.domain.ExistingPaymentForDuplicate
+import com.example.buylog.domain.CandidateRegistrationStatus
+import com.example.buylog.domain.DuplicateConfidence
+import com.example.buylog.domain.DuplicateDecision
 import kotlinx.coroutines.flow.Flow
 import java.time.Clock
 import java.time.ZoneId
@@ -58,7 +64,7 @@ class PaymentRepository(
 
     suspend fun recordNotificationEvent(draft: NotificationEventDraft) {
         val result = notificationParser.parse(draft.toPaymentSourceEvent())
-        notificationEventDao.insert(
+        val eventId = notificationEventDao.insert(
             NotificationEventEntity(
                 sourceType = draft.sourceType,
                 packageName = draft.packageName,
@@ -68,8 +74,9 @@ class PaymentRepository(
                 rawText = draft.rawText,
                 receivedAt = draft.receivedAt,
                 createdAt = clock.millis(),
-            ).withParseResult(result),
+            ).withParseResult(result).withRegistrationPending(),
         )
+        if (result.candidate != null) processCandidate(eventId, result.candidate)
     }
 
     suspend fun parseStoredNotificationEvents() {
@@ -86,6 +93,97 @@ class PaymentRepository(
                 message = result.message,
             )
         }
+    }
+
+    suspend fun processPendingCandidates() {
+        notificationEventDao.getPendingRegistrations().forEach { event ->
+            event.toCandidate()?.let { candidate -> processCandidate(event.id, candidate) }
+        }
+    }
+
+    suspend fun confirmDuplicateAsSame(event: NotificationEventEntity) {
+        require(event.registrationStatus == CandidateRegistrationStatus.DUPLICATE_CANDIDATE.name)
+        requireNotNull(event.suggestedPaymentId) { "연결할 기존 결제를 찾을 수 없습니다." }
+        notificationEventDao.updateRegistration(
+            id = event.id,
+            status = CandidateRegistrationStatus.REGISTERED.name,
+            confidence = DuplicateConfidence.MEDIUM.name,
+            paymentId = event.suggestedPaymentId,
+            suggestedPaymentId = null,
+        )
+    }
+
+    suspend fun confirmDuplicateAsSeparate(event: NotificationEventEntity) {
+        require(event.registrationStatus == CandidateRegistrationStatus.DUPLICATE_CANDIDATE.name)
+        val candidate = requireNotNull(event.toCandidate()) { "결제 후보 정보가 없습니다." }
+        registerAsNewPayment(event.id, candidate)
+    }
+
+    private suspend fun processCandidate(eventId: Long, candidate: PaymentCandidate) {
+        val methodName = candidate.paymentMethod
+        if (methodName == null) {
+            notificationEventDao.updateRegistration(
+                eventId, CandidateRegistrationStatus.NEEDS_PAYMENT_METHOD.name,
+                DuplicateConfidence.NONE.name, null, null,
+            )
+            return
+        }
+        val method = findOrCreatePaymentMethod(methodName)
+        val matches = paymentDao.findPotentialDuplicates(
+            candidate.amount,
+            method.id,
+            candidate.paidAt - duplicateWindowMillis,
+            candidate.paidAt + duplicateWindowMillis,
+        ).map { payment ->
+            ExistingPaymentForDuplicate(
+                paymentId = payment.payment.id,
+                amount = payment.payment.amount,
+                merchant = payment.payment.merchant,
+                paidAt = payment.payment.paidAt,
+                linkedSourceTypes = notificationEventDao.getLinkedSourceTypes(payment.payment.id).toSet(),
+            )
+        }
+        val decision = PaymentDuplicateDetector.decide(candidate, matches)
+        when (decision.first) {
+            DuplicateDecision.REGISTER_NEW -> registerAsNewPayment(eventId, candidate)
+            DuplicateDecision.LINK_HIGH -> notificationEventDao.updateRegistration(
+                eventId, CandidateRegistrationStatus.REGISTERED.name,
+                DuplicateConfidence.HIGH.name, decision.second, null,
+            )
+            DuplicateDecision.REVIEW_MEDIUM -> notificationEventDao.updateRegistration(
+                eventId, CandidateRegistrationStatus.DUPLICATE_CANDIDATE.name,
+                DuplicateConfidence.MEDIUM.name, null, decision.second,
+            )
+        }
+    }
+
+    private suspend fun registerAsNewPayment(eventId: Long, candidate: PaymentCandidate) {
+        val methodName = requireNotNull(candidate.paymentMethod) { "결제수단을 확인할 수 없습니다." }
+        val method = findOrCreatePaymentMethod(methodName)
+        val now = clock.millis()
+        val paymentId = paymentDao.insert(
+            PaymentEntity(
+                amount = candidate.amount,
+                merchant = candidate.merchant,
+                paidAt = candidate.paidAt,
+                paymentMethodId = method.id,
+                memo = "알림에서 자동 등록",
+                createdAt = now,
+                updatedAt = now,
+            ),
+        )
+        notificationEventDao.updateRegistration(
+            eventId, CandidateRegistrationStatus.REGISTERED.name,
+            DuplicateConfidence.LOW.name, paymentId, null,
+        )
+    }
+
+    private suspend fun findOrCreatePaymentMethod(name: String): PaymentMethodEntity {
+        return paymentMethodDao.findByName(name)
+            ?: run {
+                paymentMethodDao.insert(PaymentMethodEntity(name = name, createdAt = clock.millis()))
+                requireNotNull(paymentMethodDao.findByName(name))
+            }
     }
 }
 
@@ -138,3 +236,16 @@ private fun NotificationEventEntity.withParseResult(result: PaymentParseResult):
         parseMessage = result.message,
     )
 }
+
+private fun NotificationEventEntity.withRegistrationPending(): NotificationEventEntity =
+    if (parseStatus == "CANDIDATE") copy(registrationStatus = CandidateRegistrationStatus.PENDING.name) else this
+
+private fun NotificationEventEntity.toCandidate(): PaymentCandidate? {
+    if (parseStatus != "CANDIDATE") return null
+    val amount = parsedAmount ?: return null
+    val merchant = parsedMerchant ?: return null
+    val paidAt = parsedPaidAt ?: return null
+    return PaymentCandidate(amount, merchant, paidAt, parsedPaymentMethod, sourceType, packageName)
+}
+
+private const val duplicateWindowMillis = 5 * 60 * 1000L

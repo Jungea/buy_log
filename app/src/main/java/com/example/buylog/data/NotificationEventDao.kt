@@ -37,4 +37,20 @@ interface NotificationEventDao {
         paymentMethod: String?,
         message: String,
     )
+
+    @Query("SELECT * FROM notification_events WHERE registrationStatus = 'PENDING'")
+    suspend fun getPendingRegistrations(): List<NotificationEventEntity>
+
+    @Query("SELECT sourceType FROM notification_events WHERE paymentId = :paymentId")
+    suspend fun getLinkedSourceTypes(paymentId: Long): List<String>
+
+    @Query(
+        """
+        UPDATE notification_events SET registrationStatus = :status, duplicateConfidence = :confidence,
+        paymentId = :paymentId, suggestedPaymentId = :suggestedPaymentId WHERE id = :id
+        """,
+    )
+    suspend fun updateRegistration(
+        id: Long, status: String, confidence: String, paymentId: Long?, suggestedPaymentId: Long?,
+    )
 }

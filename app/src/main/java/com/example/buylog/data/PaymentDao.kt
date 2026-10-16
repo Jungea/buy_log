@@ -18,6 +18,12 @@ interface PaymentDao {
     @Query("SELECT * FROM payments WHERE paidAt >= :fromInclusive AND paidAt < :toExclusive ORDER BY paidAt DESC, id DESC")
     fun observePayments(fromInclusive: Long, toExclusive: Long): Flow<List<PaymentWithMethod>>
 
+    @Transaction
+    @Query("SELECT * FROM payments WHERE amount = :amount AND paymentMethodId = :paymentMethodId AND paidAt BETWEEN :fromInclusive AND :toInclusive")
+    suspend fun findPotentialDuplicates(
+        amount: Long, paymentMethodId: Long, fromInclusive: Long, toInclusive: Long,
+    ): List<PaymentWithMethod>
+
     @Insert
     suspend fun insert(payment: PaymentEntity): Long
 

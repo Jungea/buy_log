@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [PaymentEntity::class, PaymentMethodEntity::class, NotificationEventEntity::class],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class BuyLogDatabase : RoomDatabase() {
@@ -27,7 +27,7 @@ abstract class BuyLogDatabase : RoomDatabase() {
                     context.applicationContext,
                     BuyLogDatabase::class.java,
                     "buy-log.db",
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .build()
                     .also { instance = it }
             }
@@ -93,6 +93,16 @@ abstract class BuyLogDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE `notification_events` ADD COLUMN `parsedPaidAt` INTEGER")
                 db.execSQL("ALTER TABLE `notification_events` ADD COLUMN `parsedPaymentMethod` TEXT")
                 db.execSQL("ALTER TABLE `notification_events` ADD COLUMN `parseMessage` TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `notification_events` ADD COLUMN `registrationStatus` TEXT NOT NULL DEFAULT 'NOT_ELIGIBLE'")
+                db.execSQL("ALTER TABLE `notification_events` ADD COLUMN `duplicateConfidence` TEXT NOT NULL DEFAULT 'NONE'")
+                db.execSQL("ALTER TABLE `notification_events` ADD COLUMN `paymentId` INTEGER")
+                db.execSQL("ALTER TABLE `notification_events` ADD COLUMN `suggestedPaymentId` INTEGER")
+                db.execSQL("UPDATE `notification_events` SET `registrationStatus` = 'PENDING' WHERE `parseStatus` = 'CANDIDATE'")
             }
         }
     }

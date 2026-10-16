@@ -47,6 +47,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             runCatching { repository.parseStoredNotificationEvents() }
                 .onFailure { messages.send("기존 알림의 파싱 결과를 갱신하지 못했습니다.") }
+            runCatching { repository.processPendingCandidates() }
+                .onFailure { messages.send("결제 후보를 자동 등록하지 못했습니다.") }
         }
     }
 
@@ -71,6 +73,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     if (id == -1L) messages.send("이미 같은 이름의 결제수단이 있습니다.")
                 }
                 .onFailure { messages.send(it.message ?: "결제수단을 추가하지 못했습니다.") }
+        }
+    }
+
+    fun confirmDuplicateAsSame(event: NotificationEventEntity) {
+        viewModelScope.launch {
+            runCatching { repository.confirmDuplicateAsSame(event) }
+                .onSuccess { messages.send("기존 결제에 알림 출처를 연결했습니다.") }
+                .onFailure { messages.send(it.message ?: "중복 후보를 처리하지 못했습니다.") }
+        }
+    }
+
+    fun confirmDuplicateAsSeparate(event: NotificationEventEntity) {
+        viewModelScope.launch {
+            runCatching { repository.confirmDuplicateAsSeparate(event) }
+                .onSuccess { messages.send("별도 결제로 등록했습니다.") }
+                .onFailure { messages.send(it.message ?: "결제를 등록하지 못했습니다.") }
         }
     }
 }

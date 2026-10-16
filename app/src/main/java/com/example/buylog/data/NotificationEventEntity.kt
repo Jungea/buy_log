@@ -27,4 +27,10 @@ data class NotificationEventEntity(
     val parsedPaymentMethod: String? = null,
     @ColumnInfo(defaultValue = "''")
     val parseMessage: String = "",
+    @ColumnInfo(defaultValue = "'NOT_ELIGIBLE'")
+    val registrationStatus: String = "NOT_ELIGIBLE",
+    @ColumnInfo(defaultValue = "'NONE'")
+    val duplicateConfidence: String = "NONE",
+    val paymentId: Long? = null,
+    val suggestedPaymentId: Long? = null,
 )
