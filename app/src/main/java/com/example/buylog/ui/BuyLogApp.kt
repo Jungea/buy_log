@@ -66,6 +66,7 @@ import com.example.buylog.data.PaymentEntity
 import com.example.buylog.data.PaymentMethodEntity
 import com.example.buylog.data.PaymentWithMethod
 import com.example.buylog.data.TagEntity
+import com.example.buylog.data.AutoTagRuleEntity
 import com.example.buylog.domain.PaymentSummary
 import com.example.buylog.domain.PaymentParseStatus
 import com.example.buylog.domain.CandidateRegistrationStatus
@@ -333,7 +334,16 @@ fun BuyLogApp(viewModel: MainViewModel) {
     }
 
     if (showTagManager) {
-        TagManagerDialog(state.tags, { showTagManager = false }, viewModel::addTag, viewModel::updateTag, viewModel::deleteTag)
+        TagManagerDialog(
+            tags = state.tags,
+            rules = state.autoTagRules,
+            onDismiss = { showTagManager = false },
+            onAdd = viewModel::addTag,
+            onUpdate = viewModel::updateTag,
+            onDelete = viewModel::deleteTag,
+            onAddRule = viewModel::addAutoTagRule,
+            onDeleteRule = viewModel::deleteAutoTagRule,
+        )
     }
 
     if (showNotificationLog) {
@@ -838,14 +848,22 @@ private fun PaymentEditorDialog(
 @Composable
 private fun TagManagerDialog(
     tags: List<TagEntity>,
+    rules: List<AutoTagRuleEntity>,
     onDismiss: () -> Unit,
     onAdd: (String, Boolean) -> Unit,
     onUpdate: (TagEntity, String, Boolean) -> Unit,
     onDelete: (TagEntity) -> Unit,
+    onAddRule: (String, Long) -> Unit,
+    onDeleteRule: (AutoTagRuleEntity) -> Unit,
 ) {
     var name by rememberSaveable { mutableStateOf("") }
     var exclude by rememberSaveable { mutableStateOf(false) }
     var editing by remember { mutableStateOf<TagEntity?>(null) }
+    var rulePhrase by rememberSaveable { mutableStateOf("") }
+    var ruleTagId by rememberSaveable { mutableStateOf<Long?>(null) }
+    LaunchedEffect(tags) {
+        if (tags.none { it.id == ruleTagId }) ruleTagId = tags.firstOrNull()?.id
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("태그 관리") },
@@ -868,6 +886,66 @@ private fun TagManagerDialog(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("소비 집계 제외", modifier = Modifier.weight(1f))
                         Switch(checked = exclude, onCheckedChange = { exclude = it })
+                    }
+                }
+                item { HorizontalDivider(Modifier.padding(vertical = 4.dp)) }
+                item {
+                    Text("자동 태그 규칙", fontWeight = FontWeight.Bold)
+                    Text(
+                        "사용처나 메모에 문구가 포함되면 선택한 태그를 자동으로 추가합니다.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (rules.isEmpty()) {
+                    item { Text("등록된 자동 규칙이 없습니다.", style = MaterialTheme.typography.bodySmall) }
+                } else {
+                    items(rules, key = { "rule-${it.id}" }) { rule ->
+                        val tagName = tags.firstOrNull { it.id == rule.tagId }?.name ?: "삭제된 태그"
+                        Card(Modifier.fillMaxWidth()) {
+                            Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("“${rule.phrase}” 포함", fontWeight = FontWeight.SemiBold)
+                                    Text("→ #$tagName", style = MaterialTheme.typography.bodySmall)
+                                }
+                                TextButton(onClick = { onDeleteRule(rule) }) { Text("삭제") }
+                            }
+                        }
+                    }
+                }
+                item {
+                    OutlinedTextField(
+                        value = rulePhrase,
+                        onValueChange = { rulePhrase = it },
+                        label = { Text("자동 적용할 문구") },
+                        placeholder = { Text("예: 테스트몰, PG_TEST") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                    )
+                }
+                if (tags.isEmpty()) {
+                    item { Text("먼저 태그를 추가해야 자동 규칙을 만들 수 있습니다.", color = MaterialTheme.colorScheme.error) }
+                } else {
+                    item {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("적용할 태그", style = MaterialTheme.typography.labelMedium)
+                            tags.forEach { tag ->
+                                FilterChip(
+                                    selected = ruleTagId == tag.id,
+                                    onClick = { ruleTagId = tag.id },
+                                    label = { Text(tag.name) },
+                                )
+                            }
+                        }
+                    }
+                    item {
+                        Button(
+                            onClick = {
+                                ruleTagId?.let { onAddRule(rulePhrase, it) }
+                                rulePhrase = ""
+                            },
+                            enabled = rulePhrase.isNotBlank() && ruleTagId != null,
+                        ) { Text("자동 규칙 추가") }
                     }
                 }
             }

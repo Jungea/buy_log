@@ -9,6 +9,7 @@ import com.example.buylog.data.PaymentMethodEntity
 import com.example.buylog.data.PaymentWithMethod
 import com.example.buylog.data.NotificationEventEntity
 import com.example.buylog.data.TagEntity
+import com.example.buylog.data.AutoTagRuleEntity
 import com.example.buylog.domain.PaymentSummary
 import com.example.buylog.domain.PaymentSummaryCalculator
 import kotlinx.coroutines.channels.Channel
@@ -23,6 +24,7 @@ data class MainUiState(
     val methods: List<PaymentMethodEntity> = emptyList(),
     val summary: PaymentSummary = PaymentSummary(),
     val tags: List<TagEntity> = emptyList(),
+    val autoTagRules: List<AutoTagRuleEntity> = emptyList(),
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -38,12 +40,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         repository.observeCurrentMonthPayments(),
         repository.observePaymentMethods(),
         repository.observeTags(),
-    ) { allPayments, monthlyPayments, methods, tags ->
+        repository.observeAutoTagRules(),
+    ) { allPayments, monthlyPayments, methods, tags, autoTagRules ->
         MainUiState(
             payments = allPayments,
             methods = methods,
             summary = PaymentSummaryCalculator.calculate(monthlyPayments),
             tags = tags,
+            autoTagRules = autoTagRules,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MainUiState())
 
@@ -103,6 +107,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun deleteTag(tag: TagEntity) {
         viewModelScope.launch { runCatching { repository.deleteTag(tag) } }
+    }
+
+    fun addAutoTagRule(phrase: String, tagId: Long) {
+        viewModelScope.launch {
+            runCatching { repository.addAutoTagRule(phrase, tagId) }
+                .onSuccess { id ->
+                    if (id == -1L) messages.send("같은 문구와 태그의 규칙이 이미 있습니다.")
+                }
+                .onFailure { messages.send(it.message ?: "자동 태그 규칙을 추가하지 못했습니다.") }
+        }
+    }
+
+    fun deleteAutoTagRule(rule: AutoTagRuleEntity) {
+        viewModelScope.launch {
+            runCatching { repository.deleteAutoTagRule(rule) }
+                .onFailure { messages.send("자동 태그 규칙을 삭제하지 못했습니다.") }
+        }
     }
 
     fun confirmDuplicateAsSame(event: NotificationEventEntity) {

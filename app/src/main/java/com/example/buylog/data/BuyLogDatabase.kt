@@ -8,8 +8,8 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [PaymentEntity::class, PaymentMethodEntity::class, NotificationEventEntity::class, TagEntity::class, PaymentTagCrossRef::class],
-    version = 7,
+    entities = [PaymentEntity::class, PaymentMethodEntity::class, NotificationEventEntity::class, TagEntity::class, PaymentTagCrossRef::class, AutoTagRuleEntity::class],
+    version = 8,
     exportSchema = true,
 )
 abstract class BuyLogDatabase : RoomDatabase() {
@@ -17,6 +17,7 @@ abstract class BuyLogDatabase : RoomDatabase() {
     abstract fun paymentMethodDao(): PaymentMethodDao
     abstract fun notificationEventDao(): NotificationEventDao
     abstract fun tagDao(): TagDao
+    abstract fun autoTagRuleDao(): AutoTagRuleDao
 
     companion object {
         @Volatile
@@ -28,7 +29,7 @@ abstract class BuyLogDatabase : RoomDatabase() {
                     context.applicationContext,
                     BuyLogDatabase::class.java,
                     "buy-log.db",
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                     .build()
                     .also { instance = it }
             }
@@ -123,6 +124,14 @@ abstract class BuyLogDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE `payment_methods` ADD COLUMN `periodStartDay` INTEGER NOT NULL DEFAULT 1")
                 db.execSQL("ALTER TABLE `payment_methods` ADD COLUMN `performanceTarget` INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("ALTER TABLE `payments` ADD COLUMN `performanceIncluded` INTEGER NOT NULL DEFAULT 1")
+            }
+        }
+
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS `auto_tag_rules` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `phrase` TEXT NOT NULL, `tagId` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_auto_tag_rules_phrase_tagId` ON `auto_tag_rules` (`phrase`, `tagId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_auto_tag_rules_tagId` ON `auto_tag_rules` (`tagId`)")
             }
         }
     }

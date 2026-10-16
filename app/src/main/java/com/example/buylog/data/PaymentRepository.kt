@@ -10,6 +10,8 @@ import com.example.buylog.domain.ExistingPaymentForDuplicate
 import com.example.buylog.domain.CandidateRegistrationStatus
 import com.example.buylog.domain.DuplicateConfidence
 import com.example.buylog.domain.DuplicateDecision
+import com.example.buylog.domain.AutoTagMatcher
+import com.example.buylog.domain.AutoTagPattern
 import kotlinx.coroutines.flow.Flow
 import java.time.Clock
 import java.time.ZoneId
@@ -19,6 +21,7 @@ class PaymentRepository(
     private val paymentMethodDao: PaymentMethodDao,
     private val notificationEventDao: NotificationEventDao,
     private val tagDao: TagDao,
+    private val autoTagRuleDao: AutoTagRuleDao,
     private val clock: Clock = Clock.systemDefaultZone(),
     private val zoneId: ZoneId = ZoneId.systemDefault(),
 ) {
@@ -34,6 +37,8 @@ class PaymentRepository(
     fun observePaymentMethods(): Flow<List<PaymentMethodEntity>> = paymentMethodDao.observeAll()
 
     fun observeTags(): Flow<List<TagEntity>> = tagDao.observeAll()
+
+    fun observeAutoTagRules(): Flow<List<AutoTagRuleEntity>> = autoTagRuleDao.observeAll()
 
     fun observeNotificationEvents(): Flow<List<NotificationEventEntity>> =
         notificationEventDao.observeLatest()
@@ -58,8 +63,9 @@ class PaymentRepository(
             paymentDao.update(entity)
             existing.id
         }
+        val matchedTagIds = matchingTagIds(draft.merchant, draft.memo)
         tagDao.clearPaymentTags(paymentId)
-        tagDao.insertPaymentTags(draft.tagIds.map { PaymentTagCrossRef(paymentId, it) })
+        tagDao.insertPaymentTags((draft.tagIds + matchedTagIds).map { PaymentTagCrossRef(paymentId, it) })
     }
 
     suspend fun deletePayment(payment: PaymentEntity) = paymentDao.delete(payment)
@@ -88,8 +94,20 @@ class PaymentRepository(
     }
 
     suspend fun deleteTag(tag: TagEntity) {
+        autoTagRuleDao.deleteByTagId(tag.id)
         tagDao.clearTagAssignments(tag.id)
         tagDao.delete(tag.id)
+    }
+
+    suspend fun addAutoTagRule(phrase: String, tagId: Long): Long {
+        require(phrase.isNotBlank()) { "자동 태그 문구를 입력해 주세요." }
+        return autoTagRuleDao.insert(
+            AutoTagRuleEntity(phrase = phrase.trim(), tagId = tagId, createdAt = clock.millis()),
+        )
+    }
+
+    suspend fun deleteAutoTagRule(rule: AutoTagRuleEntity) {
+        autoTagRuleDao.delete(rule.id)
     }
 
     suspend fun recordNotificationEvent(draft: NotificationEventDraft) {
@@ -203,6 +221,10 @@ class PaymentRepository(
                 performanceIncluded = true,
             ),
         )
+        tagDao.insertPaymentTags(
+            matchingTagIds(candidate.merchant, "알림에서 자동 등록")
+                .map { PaymentTagCrossRef(paymentId, it) },
+        )
         notificationEventDao.updateRegistration(
             eventId, CandidateRegistrationStatus.REGISTERED.name,
             DuplicateConfidence.LOW.name, paymentId, null,
@@ -216,6 +238,13 @@ class PaymentRepository(
                 requireNotNull(paymentMethodDao.findByName(name))
             }
     }
+
+    private suspend fun matchingTagIds(merchant: String, memo: String): Set<Long> =
+        AutoTagMatcher.matchingTagIds(
+            merchant = merchant,
+            memo = memo,
+            patterns = autoTagRuleDao.getAll().map { AutoTagPattern(it.phrase, it.tagId) },
+        )
 }
 
 data class PaymentDraft(
