@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.content.pm.PackageManager
 import android.os.Build
 import android.provider.Settings
@@ -85,6 +86,7 @@ import com.example.buylog.domain.PaymentPatternAnalyzer
 import kotlinx.coroutines.flow.collectLatest
 import java.text.NumberFormat
 import java.time.Instant
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.YearMonth
@@ -119,12 +121,21 @@ fun BuyLogApp(viewModel: MainViewModel, addPaymentRequest: Int = 0) {
         missedPaymentNotificationsEnabled = granted
         MissedPaymentPreferences.setEnabled(context, granted)
     }
+    val exportBackupLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/octet-stream"),
+    ) { uri -> uri?.let(viewModel::exportBackup) }
+    var pendingRestoreUri by remember { mutableStateOf<Uri?>(null) }
+    val restoreBackupLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri -> pendingRestoreUri = uri }
     val snackbarHostState = remember { SnackbarHostState() }
     var editing by remember { mutableStateOf<PaymentWithMethod?>(null) }
     var showEditor by remember { mutableStateOf(false) }
     var showMethodManager by remember { mutableStateOf(false) }
     var showNotificationLog by remember { mutableStateOf(false) }
     var showTagManager by remember { mutableStateOf(false) }
+    var showManagementMenu by remember { mutableStateOf(false) }
+    var showBackupDialog by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf<PaymentEntity?>(null) }
     var page by rememberSaveable { mutableStateOf(0) }
     var salaryMode by rememberSaveable { mutableStateOf(false) }
@@ -189,13 +200,13 @@ fun BuyLogApp(viewModel: MainViewModel, addPaymentRequest: Int = 0) {
             TopAppBar(
                 title = { Text("결제 기록") },
                 actions = {
-                    TextButton(onClick = { showNotificationLog = true }) {
-                        Text("알림 로그")
+                    TextButton(onClick = { showManagementMenu = true }) { Text("관리") }
+                    DropdownMenu(expanded = showManagementMenu, onDismissRequest = { showManagementMenu = false }) {
+                        DropdownMenuItem(text = { Text("알림 로그") }, onClick = { showManagementMenu = false; showNotificationLog = true })
+                        DropdownMenuItem(text = { Text("결제수단 관리") }, onClick = { showManagementMenu = false; showMethodManager = true })
+                        DropdownMenuItem(text = { Text("태그 관리") }, onClick = { showManagementMenu = false; showTagManager = true })
+                        DropdownMenuItem(text = { Text("백업 및 복원") }, onClick = { showManagementMenu = false; showBackupDialog = true })
                     }
-                    TextButton(onClick = { showMethodManager = true }) {
-                        Text("결제수단 관리")
-                    }
-                    TextButton(onClick = { showTagManager = true }) { Text("태그") }
                 },
             )
         },
@@ -455,6 +466,49 @@ fun BuyLogApp(viewModel: MainViewModel, addPaymentRequest: Int = 0) {
             onDelete = viewModel::deleteTag,
             onAddRule = viewModel::addAutoTagRule,
             onDeleteRule = viewModel::deleteAutoTagRule,
+        )
+    }
+
+    if (showBackupDialog) {
+        AlertDialog(
+            onDismissRequest = { showBackupDialog = false },
+            title = { Text("백업 및 복원") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("결제, 결제수단, 태그, 자동 규칙, 알림 원문과 누락 응답을 하나의 로컬 파일로 저장합니다.")
+                    Text("백업 파일에는 금융 알림 원문이 포함될 수 있으므로 안전한 위치에 보관해 주세요.", color = MaterialTheme.colorScheme.error)
+                    Button(
+                        onClick = {
+                            exportBackupLauncher.launch("buy-log-${LocalDate.now()}.buylog")
+                            showBackupDialog = false
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("백업 파일 만들기") }
+                    Button(
+                        onClick = {
+                            restoreBackupLauncher.launch(arrayOf("application/octet-stream", "text/plain", "*/*"))
+                            showBackupDialog = false
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("백업 파일 복원") }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showBackupDialog = false }) { Text("닫기") } },
+        )
+    }
+
+    pendingRestoreUri?.let { uri ->
+        AlertDialog(
+            onDismissRequest = { pendingRestoreUri = null },
+            title = { Text("백업을 복원할까요?") },
+            text = { Text("현재 기기의 모든 BuyLog 데이터를 선택한 백업 내용으로 교체합니다. 복원 전에 현재 데이터도 백업해 두는 것을 권장합니다.") },
+            confirmButton = {
+                Button(onClick = {
+                    viewModel.restoreBackup(uri)
+                    pendingRestoreUri = null
+                }) { Text("복원") }
+            },
+            dismissButton = { TextButton(onClick = { pendingRestoreUri = null }) { Text("취소") } },
         )
     }
 

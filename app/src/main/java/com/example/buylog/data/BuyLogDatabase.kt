@@ -19,6 +19,7 @@ abstract class BuyLogDatabase : RoomDatabase() {
     abstract fun tagDao(): TagDao
     abstract fun autoTagRuleDao(): AutoTagRuleDao
     abstract fun missedPaymentCheckDao(): MissedPaymentCheckDao
+    abstract fun backupDao(): BackupDao
 
     companion object {
         @Volatile

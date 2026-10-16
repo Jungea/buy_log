@@ -1,6 +1,7 @@
 package com.example.buylog
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.buylog.data.PaymentDraft
@@ -18,6 +19,8 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 data class MainUiState(
     val payments: List<PaymentWithMethod> = emptyList(),
@@ -29,6 +32,7 @@ data class MainUiState(
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = (application as BuyLogApplication).repository
+    private val backupManager = (application as BuyLogApplication).backupManager
     private val messages = Channel<String>(Channel.BUFFERED)
     val messageEvents = messages.receiveAsFlow()
 
@@ -139,6 +143,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             runCatching { repository.confirmDuplicateAsSeparate(event) }
                 .onSuccess { messages.send("별도 결제로 등록했습니다.") }
                 .onFailure { messages.send(it.message ?: "결제를 등록하지 못했습니다.") }
+        }
+    }
+
+    fun exportBackup(uri: Uri) {
+        viewModelScope.launch {
+            runCatching { withContext(Dispatchers.IO) { backupManager.exportTo(uri) } }
+                .onSuccess { messages.send("백업 파일을 저장했습니다.") }
+                .onFailure { messages.send(it.message ?: "백업 파일을 저장하지 못했습니다.") }
+        }
+    }
+
+    fun restoreBackup(uri: Uri) {
+        viewModelScope.launch {
+            runCatching { withContext(Dispatchers.IO) { backupManager.restoreFrom(uri) } }
+                .onSuccess { messages.send("백업을 복원했습니다.") }
+                .onFailure { messages.send(it.message ?: "백업을 복원하지 못했습니다.") }
         }
     }
 }

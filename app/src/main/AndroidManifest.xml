@@ -4,7 +4,7 @@
 
     <application
         android:name=".BuyLogApplication"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:icon="@drawable/ic_launcher"
         android:label="결제 기록"
         android:roundIcon="@drawable/ic_launcher"

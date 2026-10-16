@@ -3,6 +3,7 @@ package com.example.buylog
 import android.app.Application
 import com.example.buylog.data.BuyLogDatabase
 import com.example.buylog.data.PaymentRepository
+import com.example.buylog.data.BuyLogBackupManager
 
 class BuyLogApplication : Application() {
     override fun onCreate() {
@@ -19,5 +20,9 @@ class BuyLogApplication : Application() {
             tagDao = database.tagDao(),
             autoTagRuleDao = database.autoTagRuleDao(),
         )
+    }
+
+    val backupManager: BuyLogBackupManager by lazy {
+        BuyLogBackupManager(contentResolver, BuyLogDatabase.getInstance(this))
     }
 }
