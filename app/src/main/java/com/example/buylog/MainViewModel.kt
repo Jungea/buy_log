@@ -57,11 +57,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         viewModelScope.launch {
+            val recognizedPackages = NotificationRecognitionSettings.getSelectedPackages(application)
             runCatching { repository.ensureUnclassifiedPaymentMethod() }
                 .onFailure { messages.send("기본 미분류 결제수단을 준비하지 못했습니다.") }
-            runCatching { repository.parseStoredNotificationEvents() }
+            runCatching { repository.parseStoredNotificationEvents(recognizedPackages) }
                 .onFailure { messages.send("기존 알림의 파싱 결과를 갱신하지 못했습니다.") }
-            runCatching { repository.processPendingCandidates() }
+            runCatching { repository.processPendingCandidates(recognizedPackages) }
                 .onFailure { messages.send("결제 후보를 자동 등록하지 못했습니다.") }
         }
     }

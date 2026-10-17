@@ -66,6 +66,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.buylog.MainViewModel
 import com.example.buylog.NotificationCaptureSettings
+import com.example.buylog.NotificationRecognitionSettings
+import com.example.buylog.QaPaymentNotificationSender
 import com.example.buylog.MissedPaymentPreferences
 import com.example.buylog.SpendingPreferences
 import com.example.buylog.data.NotificationEventEntity
@@ -113,6 +115,9 @@ fun BuyLogApp(viewModel: MainViewModel, addPaymentRequest: Int = 0) {
     var notificationCaptureEnabled by remember {
         mutableStateOf(NotificationCaptureSettings.isEnabled(context))
     }
+    var selectedNotificationPackages by remember {
+        mutableStateOf(NotificationRecognitionSettings.getSelectedPackages(context))
+    }
     var missedPaymentNotificationsEnabled by remember {
         mutableStateOf(MissedPaymentPreferences.isEnabled(context))
     }
@@ -121,6 +126,11 @@ fun BuyLogApp(viewModel: MainViewModel, addPaymentRequest: Int = 0) {
     ) { granted ->
         missedPaymentNotificationsEnabled = granted
         MissedPaymentPreferences.setEnabled(context, granted)
+    }
+    val qaNotificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) QaPaymentNotificationSender.send(context)
     }
     val exportBackupLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/octet-stream"),
@@ -216,7 +226,7 @@ fun BuyLogApp(viewModel: MainViewModel, addPaymentRequest: Int = 0) {
                 actions = {
                     TextButton(onClick = { showManagementMenu = true }) { Text("관리") }
                     DropdownMenu(expanded = showManagementMenu, onDismissRequest = { showManagementMenu = false }) {
-                        DropdownMenuItem(text = { Text("알림 로그") }, onClick = { showManagementMenu = false; showNotificationLog = true })
+                        DropdownMenuItem(text = { Text("알림 관리") }, onClick = { showManagementMenu = false; showNotificationLog = true })
                         DropdownMenuItem(text = { Text("결제수단 관리") }, onClick = { showManagementMenu = false; showMethodManager = true })
                         DropdownMenuItem(text = { Text("태그 관리") }, onClick = { showManagementMenu = false; showTagManager = true })
                         DropdownMenuItem(text = { Text("백업 및 복원") }, onClick = { showManagementMenu = false; showBackupDialog = true })
@@ -612,12 +622,27 @@ fun BuyLogApp(viewModel: MainViewModel, addPaymentRequest: Int = 0) {
             payments = state.payments,
             notificationAccessEnabled = notificationAccessEnabled,
             notificationCaptureEnabled = notificationCaptureEnabled,
+            selectedPackages = selectedNotificationPackages,
             onCaptureEnabledChange = { enabled ->
                 NotificationCaptureSettings.setEnabled(context, enabled)
                 notificationCaptureEnabled = enabled
             },
             onOpenSettings = {
                 context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+            },
+            onPackageSelectedChange = { packageName, selected ->
+                NotificationRecognitionSettings.setSelected(context, packageName, selected)
+                selectedNotificationPackages = NotificationRecognitionSettings.getSelectedPackages(context)
+            },
+            onSendQaNotification = {
+                if (
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    qaNotificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                } else {
+                    QaPaymentNotificationSender.send(context)
+                }
             },
             onConfirmDuplicateAsSame = viewModel::confirmDuplicateAsSame,
             onConfirmDuplicateAsSeparate = viewModel::confirmDuplicateAsSeparate,
@@ -730,8 +755,11 @@ private fun NotificationLogDialog(
     payments: List<PaymentWithMethod>,
     notificationAccessEnabled: Boolean,
     notificationCaptureEnabled: Boolean,
+    selectedPackages: Set<String>,
     onCaptureEnabledChange: (Boolean) -> Unit,
     onOpenSettings: () -> Unit,
+    onPackageSelectedChange: (String, Boolean) -> Unit,
+    onSendQaNotification: () -> Unit,
     onConfirmDuplicateAsSame: (NotificationEventEntity) -> Unit,
     onConfirmDuplicateAsSeparate: (NotificationEventEntity) -> Unit,
     onDismiss: () -> Unit,
@@ -741,7 +769,7 @@ private fun NotificationLogDialog(
     val duplicateCount = events.count { it.registrationStatus == CandidateRegistrationStatus.DUPLICATE_CANDIDATE.name }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("알림 및 결제 후보") },
+        title = { Text("알림 관리") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Card(
@@ -761,7 +789,7 @@ private fun NotificationLogDialog(
                             fontWeight = FontWeight.SemiBold,
                         )
                         Text(
-                            "원문과 파싱 결과는 이 기기에만 저장되며, 아직 결제로 자동 등록하지 않습니다.",
+                            "원문은 이 기기에만 저장되며, 선택한 앱의 알림만 결제 후보로 인식합니다.",
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }
@@ -784,6 +812,16 @@ private fun NotificationLogDialog(
                         enabled = notificationAccessEnabled,
                     )
                 }
+                Button(
+                    onClick = onSendQaNotification,
+                    enabled = notificationAccessEnabled && notificationCaptureEnabled,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("QA 결제 알림 보내기") }
+                Text(
+                    "먼저 테스트 알림을 보내 목록에 BuyLog를 표시한 뒤, BuyLog를 선택하고 한 번 더 보내면 자동 등록까지 확인할 수 있습니다.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 if (events.isEmpty()) {
                     Text(
                         if (notificationCaptureEnabled) {
@@ -794,6 +832,25 @@ private fun NotificationLogDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 } else {
+                    Text("결제 후보로 인식할 앱", style = MaterialTheme.typography.labelLarge)
+                    events.distinctBy { it.packageName }.forEach { event ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(event.appName, fontWeight = FontWeight.SemiBold)
+                                Text(event.packageName, style = MaterialTheme.typography.labelSmall)
+                            }
+                            Switch(
+                                checked = event.packageName in selectedPackages,
+                                onCheckedChange = { selected ->
+                                    onPackageSelectedChange(event.packageName, selected)
+                                },
+                            )
+                        }
+                    }
+                    HorizontalDivider()
                     Text(
                         "결제 후보 ${candidateCount}건 · 파싱 확인 ${reviewCount}건 · 중복 확인 ${duplicateCount}건",
                         style = MaterialTheme.typography.labelLarge,
@@ -895,7 +952,11 @@ private fun NotificationEventRow(
                     color = MaterialTheme.colorScheme.error,
                 )
                 PaymentParseStatus.NOT_PAYMENT.name -> Text(
-                    "결제 알림 아님",
+                    if (event.parseMessage == "결제 후보 인식 앱으로 선택되지 않았습니다.") {
+                        "수집됨 · 결제 후보 인식 제외 앱"
+                    } else {
+                        "결제 알림 아님"
+                    },
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

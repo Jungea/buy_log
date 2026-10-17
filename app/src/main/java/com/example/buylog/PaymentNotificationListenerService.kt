@@ -16,7 +16,9 @@ class PaymentNotificationListenerService : NotificationListenerService() {
 
     override fun onNotificationPosted(notification: StatusBarNotification) {
         if (!NotificationCaptureSettings.isEnabled(this)) return
-        if (notification.packageName == packageName) return
+        val isQaNotification = notification.packageName == packageName &&
+            notification.notification.channelId == QaPaymentNotificationSender.CHANNEL_ID
+        if (notification.packageName == packageName && !isQaNotification) return
 
         val extras = notification.notification.extras
         val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
@@ -46,7 +48,13 @@ class PaymentNotificationListenerService : NotificationListenerService() {
         )
 
         serviceScope.launch {
-            (application as BuyLogApplication).repository.recordNotificationEvent(draft)
+            (application as BuyLogApplication).repository.recordNotificationEvent(
+                draft = draft,
+                recognizeAsPayment = NotificationRecognitionSettings.isSelected(
+                    this@PaymentNotificationListenerService,
+                    notification.packageName,
+                ),
+            )
         }
     }
 

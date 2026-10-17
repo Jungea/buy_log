@@ -3,6 +3,7 @@ package com.example.buylog.data
 import com.example.buylog.domain.MonthRange
 import com.example.buylog.domain.PaymentNotificationParser
 import com.example.buylog.domain.PaymentParseResult
+import com.example.buylog.domain.PaymentParseStatus
 import com.example.buylog.domain.PaymentSourceEvent
 import com.example.buylog.domain.PaymentCandidate
 import com.example.buylog.domain.PaymentDuplicateDetector
@@ -134,8 +135,18 @@ class PaymentRepository(
         autoTagRuleDao.delete(rule.id)
     }
 
-    suspend fun recordNotificationEvent(draft: NotificationEventDraft) {
-        val result = notificationParser.parse(draft.toPaymentSourceEvent())
+    suspend fun recordNotificationEvent(
+        draft: NotificationEventDraft,
+        recognizeAsPayment: Boolean = true,
+    ) {
+        val result = if (recognizeAsPayment) {
+            notificationParser.parse(draft.toPaymentSourceEvent())
+        } else {
+            PaymentParseResult(
+                status = PaymentParseStatus.NOT_PAYMENT,
+                message = "결제 후보 인식 앱으로 선택되지 않았습니다.",
+            )
+        }
         val eventId = notificationEventDao.insert(
             NotificationEventEntity(
                 sourceType = draft.sourceType,
@@ -151,9 +162,16 @@ class PaymentRepository(
         if (result.candidate != null) processCandidate(eventId, result.candidate)
     }
 
-    suspend fun parseStoredNotificationEvents() {
+    suspend fun parseStoredNotificationEvents(recognizedPackages: Set<String>) {
         notificationEventDao.getUnprocessed().forEach { event ->
-            val result = notificationParser.parse(event.toPaymentSourceEvent())
+            val result = if (event.packageName in recognizedPackages) {
+                notificationParser.parse(event.toPaymentSourceEvent())
+            } else {
+                PaymentParseResult(
+                    status = PaymentParseStatus.NOT_PAYMENT,
+                    message = "결제 후보 인식 앱으로 선택되지 않았습니다.",
+                )
+            }
             val candidate = result.candidate
             notificationEventDao.updateParseResult(
                 id = event.id,
@@ -167,8 +185,10 @@ class PaymentRepository(
         }
     }
 
-    suspend fun processPendingCandidates() {
-        notificationEventDao.getPendingRegistrations().forEach { event ->
+    suspend fun processPendingCandidates(recognizedPackages: Set<String>) {
+        notificationEventDao.getPendingRegistrations()
+            .filter { it.packageName in recognizedPackages }
+            .forEach { event ->
             event.toCandidate()?.let { candidate -> processCandidate(event.id, candidate) }
         }
     }
