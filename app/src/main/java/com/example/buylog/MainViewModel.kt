@@ -157,6 +157,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun reprocessHistoricalNotifications(packageName: String) {
+        val application = getApplication<Application>()
+        viewModelScope.launch {
+            runCatching {
+                repository.reprocessHistoricalNotifications(packageName) { rawText ->
+                    NotificationRecognitionSettings.resolvePaymentMethodId(
+                        application,
+                        packageName,
+                        rawText,
+                    )
+                }
+            }
+                .onSuccess { messages.send("이 앱의 이전 알림을 결제 후보로 다시 확인했습니다.") }
+                .onFailure { messages.send(it.message ?: "이전 알림을 다시 확인하지 못했습니다.") }
+        }
+    }
+
+    fun addHistoricalNotificationAsPayment(event: NotificationEventEntity) {
+        viewModelScope.launch {
+            runCatching { repository.addHistoricalNotificationAsPayment(event) }
+                .onSuccess { messages.send("알림을 결제에 추가했습니다.") }
+                .onFailure { messages.send(it.message ?: "알림을 결제에 추가하지 못했습니다.") }
+        }
+    }
+
     fun exportBackup(uri: Uri) {
         viewModelScope.launch {
             runCatching { withContext(Dispatchers.IO) { backupManager.exportTo(uri) } }

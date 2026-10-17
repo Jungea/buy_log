@@ -54,6 +54,11 @@ class PaymentNotificationListenerService : NotificationListenerService() {
                     this@PaymentNotificationListenerService,
                     notification.packageName,
                 ),
+                configuredPaymentMethodId = NotificationRecognitionSettings.resolvePaymentMethodId(
+                    this@PaymentNotificationListenerService,
+                    notification.packageName,
+                    rawText,
+                ),
             )
         }
     }

@@ -138,9 +138,13 @@ class PaymentRepository(
     suspend fun recordNotificationEvent(
         draft: NotificationEventDraft,
         recognizeAsPayment: Boolean = true,
+        configuredPaymentMethodId: Long? = null,
     ) {
         val result = if (recognizeAsPayment) {
-            notificationParser.parse(draft.toPaymentSourceEvent())
+            applyConfiguredPaymentMethod(
+                notificationParser.parse(draft.toPaymentSourceEvent()),
+                configuredPaymentMethodId,
+            )
         } else {
             PaymentParseResult(
                 status = PaymentParseStatus.NOT_PAYMENT,
@@ -160,6 +164,44 @@ class PaymentRepository(
             ).withParseResult(result).withRegistrationPending(),
         )
         if (result.candidate != null) processCandidate(eventId, result.candidate)
+    }
+
+    suspend fun reprocessHistoricalNotifications(
+        packageName: String,
+        paymentMethodResolver: (String) -> Long?,
+    ) {
+        notificationEventDao.getUnregisteredByPackage(packageName).forEach { event ->
+            val result = applyConfiguredPaymentMethod(
+                notificationParser.parse(event.toPaymentSourceEvent()),
+                paymentMethodResolver(event.rawText),
+            )
+            val candidate = result.candidate
+            notificationEventDao.updateParseResult(
+                id = event.id,
+                status = result.status.name,
+                amount = candidate?.amount,
+                merchant = candidate?.merchant,
+                paidAt = candidate?.paidAt,
+                paymentMethod = candidate?.paymentMethod,
+                message = result.message,
+            )
+            notificationEventDao.updateRegistration(
+                id = event.id,
+                status = if (candidate == null) CandidateRegistrationStatus.NOT_ELIGIBLE.name
+                else CandidateRegistrationStatus.HISTORICAL_CANDIDATE.name,
+                confidence = DuplicateConfidence.NONE.name,
+                paymentId = null,
+                suggestedPaymentId = null,
+            )
+        }
+    }
+
+    suspend fun addHistoricalNotificationAsPayment(event: NotificationEventEntity) {
+        require(event.registrationStatus == CandidateRegistrationStatus.HISTORICAL_CANDIDATE.name) {
+            "과거 결제 후보가 아닙니다."
+        }
+        val candidate = requireNotNull(event.toCandidate()) { "결제 후보 정보가 없습니다." }
+        processCandidate(event.id, candidate)
     }
 
     suspend fun parseStoredNotificationEvents(recognizedPackages: Set<String>) {
@@ -281,6 +323,24 @@ class PaymentRepository(
                 paymentMethodDao.insert(PaymentMethodEntity(name = name, createdAt = clock.millis()))
                 requireNotNull(paymentMethodDao.findByName(name))
             }
+    }
+
+    private suspend fun applyConfiguredPaymentMethod(
+        result: PaymentParseResult,
+        configuredPaymentMethodId: Long?,
+    ): PaymentParseResult {
+        val candidate = result.candidate ?: return result
+        val method = if (configuredPaymentMethodId == null) null
+        else paymentMethodDao.findById(configuredPaymentMethodId)
+        val resolvedMethod = method ?: ensureUnclassifiedPaymentMethod()
+        return result.copy(
+            candidate = candidate.copy(paymentMethod = resolvedMethod.name),
+            message = if (configuredPaymentMethodId == null) {
+                "결제수단 연결 규칙이 없어 미분류로 처리했습니다."
+            } else {
+                "앱별 결제수단 연결 규칙을 적용했습니다."
+            },
+        )
     }
 
     private suspend fun matchingTagIds(merchant: String, memo: String): Set<Long> =

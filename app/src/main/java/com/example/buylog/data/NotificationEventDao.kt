@@ -18,6 +18,17 @@ interface NotificationEventDao {
 
     @Query(
         """
+        SELECT * FROM notification_events
+        WHERE packageName = :packageName
+          AND paymentId IS NULL
+          AND registrationStatus NOT IN ('DUPLICATE_CANDIDATE', 'PENDING')
+        ORDER BY receivedAt DESC
+        """,
+    )
+    suspend fun getUnregisteredByPackage(packageName: String): List<NotificationEventEntity>
+
+    @Query(
+        """
         UPDATE notification_events
         SET parseStatus = :status,
             parsedAmount = :amount,

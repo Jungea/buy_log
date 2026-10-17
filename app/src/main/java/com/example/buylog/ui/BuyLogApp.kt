@@ -37,6 +37,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -59,6 +60,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -86,6 +89,7 @@ import com.example.buylog.domain.SpendingPeriodCalculator
 import com.example.buylog.domain.CardPeriodCalculator
 import com.example.buylog.domain.CardPerformanceCalculator
 import com.example.buylog.domain.PaymentPatternAnalyzer
+import com.example.buylog.domain.NotificationPaymentRule
 import kotlinx.coroutines.flow.collectLatest
 import java.text.NumberFormat
 import java.time.Instant
@@ -617,9 +621,10 @@ fun BuyLogApp(viewModel: MainViewModel, addPaymentRequest: Int = 0) {
     }
 
     if (showNotificationLog) {
-        NotificationLogDialog(
+        NotificationManagementScreen(
             events = notificationEvents,
             payments = state.payments,
+            methods = state.methods,
             notificationAccessEnabled = notificationAccessEnabled,
             notificationCaptureEnabled = notificationCaptureEnabled,
             selectedPackages = selectedNotificationPackages,
@@ -633,6 +638,7 @@ fun BuyLogApp(viewModel: MainViewModel, addPaymentRequest: Int = 0) {
             onPackageSelectedChange = { packageName, selected ->
                 NotificationRecognitionSettings.setSelected(context, packageName, selected)
                 selectedNotificationPackages = NotificationRecognitionSettings.getSelectedPackages(context)
+                if (selected) viewModel.reprocessHistoricalNotifications(packageName)
             },
             onSendQaNotification = {
                 if (
@@ -646,6 +652,8 @@ fun BuyLogApp(viewModel: MainViewModel, addPaymentRequest: Int = 0) {
             },
             onConfirmDuplicateAsSame = viewModel::confirmDuplicateAsSame,
             onConfirmDuplicateAsSeparate = viewModel::confirmDuplicateAsSeparate,
+            onAddHistorical = viewModel::addHistoricalNotificationAsPayment,
+            onReprocessHistorical = viewModel::reprocessHistoricalNotifications,
             onDismiss = { showNotificationLog = false },
         )
     }
@@ -747,6 +755,336 @@ private fun rememberNotificationAccessEnabled(): Boolean {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
     return enabled
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NotificationManagementScreen(
+    events: List<NotificationEventEntity>,
+    payments: List<PaymentWithMethod>,
+    methods: List<PaymentMethodEntity>,
+    notificationAccessEnabled: Boolean,
+    notificationCaptureEnabled: Boolean,
+    selectedPackages: Set<String>,
+    onCaptureEnabledChange: (Boolean) -> Unit,
+    onOpenSettings: () -> Unit,
+    onPackageSelectedChange: (String, Boolean) -> Unit,
+    onSendQaNotification: () -> Unit,
+    onConfirmDuplicateAsSame: (NotificationEventEntity) -> Unit,
+    onConfirmDuplicateAsSeparate: (NotificationEventEntity) -> Unit,
+    onAddHistorical: (NotificationEventEntity) -> Unit,
+    onReprocessHistorical: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    var page by rememberSaveable { mutableStateOf(0) }
+    var showAllHistory by rememberSaveable { mutableStateOf(false) }
+    var detailPackage by rememberSaveable { mutableStateOf<String?>(null) }
+    var settingsVersion by remember { mutableStateOf(0) }
+    val apps = events.distinctBy { it.packageName }
+    val visibleHistory = if (showAllHistory) {
+        events
+    } else {
+        events.filter {
+            it.packageName in selectedPackages &&
+                it.parseStatus != PaymentParseStatus.NOT_PAYMENT.name
+        }
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(modifier = Modifier.fillMaxSize()) {
+            Scaffold(
+                topBar = {
+                    TopAppBar(
+                        title = { Text("알림 설정") },
+                        navigationIcon = { TextButton(onClick = onDismiss) { Text("닫기") } },
+                    )
+                },
+                bottomBar = {
+                    NavigationBar {
+                        NavigationBarItem(
+                            selected = page == 0,
+                            onClick = { page = 0; detailPackage = null },
+                            icon = { Text("권한 설정") },
+                        )
+                        NavigationBarItem(
+                            selected = page == 1,
+                            onClick = { page = 1; detailPackage = null },
+                            icon = { Text("앱 이력") },
+                        )
+                        NavigationBarItem(
+                            selected = page == 2,
+                            onClick = { page = 2 },
+                            icon = { Text("앱별 등록") },
+                        )
+                    }
+                },
+            ) { padding ->
+                when (page) {
+                    0 -> LazyColumn(
+                        modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                    ) {
+                        item {
+                            Card(
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (notificationAccessEnabled) {
+                                        MaterialTheme.colorScheme.primaryContainer
+                                    } else MaterialTheme.colorScheme.errorContainer,
+                                ),
+                            ) {
+                                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text(
+                                        if (notificationAccessEnabled) "알림 접근 권한이 설정되어 있습니다."
+                                        else "알림 접근 권한이 필요합니다.",
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                    Text("BuyLog가 기기의 알림 원문을 읽으려면 Android 설정에서 권한을 허용해야 합니다.")
+                                    TextButton(onClick = onOpenSettings) { Text("Android 권한 설정 열기") }
+                                }
+                            }
+                        }
+                        item {
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("원문 알림 수집", fontWeight = FontWeight.Bold)
+                                    Text("수집한 원문은 기기에만 저장됩니다.", style = MaterialTheme.typography.bodySmall)
+                                }
+                                Switch(
+                                    checked = notificationCaptureEnabled,
+                                    onCheckedChange = onCaptureEnabledChange,
+                                    enabled = notificationAccessEnabled,
+                                )
+                            }
+                        }
+                        item {
+                            Button(
+                                onClick = onSendQaNotification,
+                                enabled = notificationAccessEnabled && notificationCaptureEnabled,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) { Text("QA 결제 알림 보내기") }
+                        }
+                        item {
+                            Text(
+                                "권한과 수집을 켠 뒤 QA 알림을 보내면 앱 이력과 앱별 등록 설정에서 전체 흐름을 확인할 수 있습니다.",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+
+                    1 -> Column(
+                        modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(
+                                selected = !showAllHistory,
+                                onClick = { showAllHistory = false },
+                                label = { Text("결제 알림") },
+                            )
+                            FilterChip(
+                                selected = showAllHistory,
+                                onClick = { showAllHistory = true },
+                                label = { Text("전체 알림") },
+                            )
+                        }
+                        Text(
+                            if (showAllHistory) "수집된 모든 앱 알림입니다."
+                            else "허용한 앱에서 결제 후보로 판별된 알림입니다.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        if (visibleHistory.isEmpty()) {
+                            Text("표시할 알림이 없습니다.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                items(visibleHistory, key = { it.id }) { event ->
+                                    Column {
+                                        NotificationEventRow(
+                                            event = event,
+                                            suggestedPayment = payments.firstOrNull { it.payment.id == event.suggestedPaymentId },
+                                            onConfirmDuplicateAsSame = { onConfirmDuplicateAsSame(event) },
+                                            onConfirmDuplicateAsSeparate = { onConfirmDuplicateAsSeparate(event) },
+                                        )
+                                        if (event.registrationStatus == CandidateRegistrationStatus.HISTORICAL_CANDIDATE.name) {
+                                            Button(
+                                                onClick = { onAddHistorical(event) },
+                                                modifier = Modifier.fillMaxWidth(),
+                                            ) { Text("결제에 추가") }
+                                        }
+                                        if (showAllHistory && event.packageName !in selectedPackages) {
+                                            TextButton(
+                                                onClick = { onPackageSelectedChange(event.packageName, true) },
+                                            ) { Text("이 앱의 결제 알림 허용") }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    else -> {
+                        val selectedApp = apps.firstOrNull { it.packageName == detailPackage }
+                        if (selectedApp == null) {
+                            LazyColumn(
+                                modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                item {
+                                    Text("알림을 한 번 이상 받은 앱만 표시됩니다.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                items(apps, key = { it.packageName }) { app ->
+                                    OutlinedCard(
+                                        onClick = { detailPackage = app.packageName },
+                                        modifier = Modifier.fillMaxWidth(),
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth().padding(14.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            Column(Modifier.weight(1f)) {
+                                                Text(app.appName, fontWeight = FontWeight.Bold)
+                                                Text(app.packageName, style = MaterialTheme.typography.labelSmall)
+                                            }
+                                            Text(if (app.packageName in selectedPackages) "허용됨 ›" else "미허용 ›")
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            val packageName = selectedApp.packageName
+                            val defaultMethodId = NotificationRecognitionSettings
+                                .getDefaultPaymentMethodId(context, packageName)
+                            val rules = NotificationRecognitionSettings.getRules(context, packageName)
+                            var defaultMenu by remember(packageName, settingsVersion) { mutableStateOf(false) }
+                            var rulePhrase by remember(packageName) { mutableStateOf("") }
+                            var ruleMethodId by remember(packageName) { mutableStateOf<Long?>(null) }
+                            var ruleMethodMenu by remember(packageName, settingsVersion) { mutableStateOf(false) }
+                            LazyColumn(
+                                modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                item { TextButton(onClick = { detailPackage = null }) { Text("‹ 앱 목록") } }
+                                item {
+                                    Text(selectedApp.appName, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                                    Text(packageName, style = MaterialTheme.typography.labelSmall)
+                                }
+                                item {
+                                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                        Text("결제 알림 허용", Modifier.weight(1f), fontWeight = FontWeight.Bold)
+                                        Switch(
+                                            checked = packageName in selectedPackages,
+                                            onCheckedChange = { onPackageSelectedChange(packageName, it) },
+                                        )
+                                    }
+                                }
+                                item {
+                                    Text("기본 결제수단", fontWeight = FontWeight.Bold)
+                                    OutlinedCard(onClick = { defaultMenu = true }, modifier = Modifier.fillMaxWidth()) {
+                                        Text(
+                                            methods.firstOrNull { it.id == defaultMethodId }?.name ?: "미분류",
+                                            modifier = Modifier.padding(14.dp),
+                                        )
+                                    }
+                                    DropdownMenu(expanded = defaultMenu, onDismissRequest = { defaultMenu = false }) {
+                                        DropdownMenuItem(
+                                            text = { Text("미분류") },
+                                            onClick = {
+                                                NotificationRecognitionSettings.setDefaultPaymentMethodId(context, packageName, null)
+                                                defaultMenu = false
+                                                settingsVersion++
+                                                onReprocessHistorical(packageName)
+                                            },
+                                        )
+                                        methods.filter { it.name != UNCLASSIFIED_PAYMENT_METHOD_NAME }.forEach { method ->
+                                            DropdownMenuItem(
+                                                text = { Text(method.name) },
+                                                onClick = {
+                                                    NotificationRecognitionSettings.setDefaultPaymentMethodId(context, packageName, method.id)
+                                                    defaultMenu = false
+                                                    settingsVersion++
+                                                    onReprocessHistorical(packageName)
+                                                },
+                                            )
+                                        }
+                                    }
+                                }
+                                item { Text("키워드별 결제수단", fontWeight = FontWeight.Bold) }
+                                items(rules, key = { "${it.phrase}:${it.paymentMethodId}" }) { rule ->
+                                    Card {
+                                        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            Column(Modifier.weight(1f)) {
+                                                Text("‘${rule.phrase}’ 포함", fontWeight = FontWeight.SemiBold)
+                                                Text(methods.firstOrNull { it.id == rule.paymentMethodId }?.name ?: "삭제된 결제수단")
+                                            }
+                                            TextButton(onClick = {
+                                                NotificationRecognitionSettings.setRules(context, packageName, rules - rule)
+                                                settingsVersion++
+                                                onReprocessHistorical(packageName)
+                                            }) { Text("삭제") }
+                                        }
+                                    }
+                                }
+                                item {
+                                    OutlinedTextField(
+                                        value = rulePhrase,
+                                        onValueChange = { rulePhrase = it },
+                                        label = { Text("포함 문구 예: 카드, 출금") },
+                                        modifier = Modifier.fillMaxWidth(),
+                                    )
+                                    OutlinedCard(onClick = { ruleMethodMenu = true }, modifier = Modifier.fillMaxWidth()) {
+                                        Text(
+                                            methods.firstOrNull { it.id == ruleMethodId }?.name ?: "연결할 결제수단 선택",
+                                            modifier = Modifier.padding(14.dp),
+                                        )
+                                    }
+                                    DropdownMenu(expanded = ruleMethodMenu, onDismissRequest = { ruleMethodMenu = false }) {
+                                        methods.forEach { method ->
+                                            DropdownMenuItem(
+                                                text = { Text(method.name) },
+                                                onClick = { ruleMethodId = method.id; ruleMethodMenu = false },
+                                            )
+                                        }
+                                    }
+                                    Button(
+                                        enabled = rulePhrase.isNotBlank() && ruleMethodId != null,
+                                        onClick = {
+                                            val methodId = ruleMethodId ?: return@Button
+                                            NotificationRecognitionSettings.setRules(
+                                                context,
+                                                packageName,
+                                                rules.filterNot {
+                                                    it.phrase.equals(rulePhrase.trim(), ignoreCase = true)
+                                                } + NotificationPaymentRule(rulePhrase.trim(), methodId),
+                                            )
+                                            rulePhrase = ""
+                                            ruleMethodId = null
+                                            settingsVersion++
+                                            onReprocessHistorical(packageName)
+                                        },
+                                        modifier = Modifier.fillMaxWidth(),
+                                    ) { Text("연결 규칙 추가") }
+                                }
+                                item {
+                                    Text(
+                                        "더 긴 키워드가 먼저 적용됩니다. 어떤 규칙에도 맞지 않으면 기본 결제수단을 사용하고, 기본값도 없으면 미분류로 등록합니다.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable

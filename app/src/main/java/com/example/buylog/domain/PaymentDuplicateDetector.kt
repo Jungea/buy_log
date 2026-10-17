@@ -16,6 +16,7 @@ enum class CandidateRegistrationStatus {
     REGISTERED,
     DUPLICATE_CANDIDATE,
     NEEDS_PAYMENT_METHOD,
+    HISTORICAL_CANDIDATE,
 }
 
 enum class DuplicateConfidence { NONE, HIGH, MEDIUM, LOW }
