@@ -162,7 +162,6 @@ fun BuyLogApp(viewModel: MainViewModel, addPaymentRequest: Int = 0) {
     var editing by remember { mutableStateOf<PaymentWithMethod?>(null) }
     var showEditor by remember { mutableStateOf(false) }
     var showNotificationLog by remember { mutableStateOf(false) }
-    var showTagManager by remember { mutableStateOf(false) }
     var showManagementMenu by remember { mutableStateOf(false) }
     var showBackupDialog by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf<PaymentEntity?>(null) }
@@ -240,9 +239,9 @@ fun BuyLogApp(viewModel: MainViewModel, addPaymentRequest: Int = 0) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (page == 4) "결제수단 관리" else "결제 기록") },
+                title = { Text(if (page == 4) "결제수단 관리" else if (page == 5) "태그 관리" else "결제 기록") },
                 navigationIcon = {
-                    if (page == 4) TextButton(onClick = { page = 0 }) { Text("뒤로") }
+                    if (page == 4 || page == 5) TextButton(onClick = { page = 0 }) { Text("뒤로") }
                 },
                 actions = {
                     if (page != 4) {
@@ -250,7 +249,7 @@ fun BuyLogApp(viewModel: MainViewModel, addPaymentRequest: Int = 0) {
                         DropdownMenu(expanded = showManagementMenu, onDismissRequest = { showManagementMenu = false }) {
                             DropdownMenuItem(text = { Text("알림 관리") }, onClick = { showManagementMenu = false; showNotificationLog = true })
                             DropdownMenuItem(text = { Text("결제수단 관리") }, onClick = { showManagementMenu = false; page = 4 })
-                            DropdownMenuItem(text = { Text("태그 관리") }, onClick = { showManagementMenu = false; showTagManager = true })
+                            DropdownMenuItem(text = { Text("태그 관리") }, onClick = { showManagementMenu = false; page = 5 })
                             DropdownMenuItem(text = { Text("백업 및 복원") }, onClick = { showManagementMenu = false; showBackupDialog = true })
                         }
                     }
@@ -259,7 +258,7 @@ fun BuyLogApp(viewModel: MainViewModel, addPaymentRequest: Int = 0) {
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
-            if (page != 4) {
+            if (page != 4 && page != 5) {
                 NavigationBar {
                     NavigationBarItem(selected = page == 0, onClick = { page = 0 }, icon = { Text("월간") })
                     NavigationBarItem(selected = page == 1, onClick = { page = 1 }, icon = { Text("결제 내역") })
@@ -269,7 +268,7 @@ fun BuyLogApp(viewModel: MainViewModel, addPaymentRequest: Int = 0) {
             }
         },
         floatingActionButton = {
-            if (page != 4) {
+            if (page != 4 && page != 5) {
                 FloatingActionButton(onClick = {
                     editing = null
                     showEditor = true
@@ -285,6 +284,17 @@ fun BuyLogApp(viewModel: MainViewModel, addPaymentRequest: Int = 0) {
                 onAddMethod = viewModel::addPaymentMethod,
                 onUpdateCardSettings = viewModel::updateCardSettings,
                 onDeleteMethod = { method -> deletingMethod = method },
+            )
+        } else if (page == 5) {
+            TagManagerPage(
+                modifier = Modifier.padding(padding),
+                tags = state.tags,
+                rules = state.autoTagRules,
+                onAdd = viewModel::addTag,
+                onUpdate = viewModel::updateTag,
+                onDelete = viewModel::deleteTag,
+                onAddRule = viewModel::addAutoTagRule,
+                onDeleteRule = viewModel::deleteAutoTagRule,
             )
         } else LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
@@ -580,19 +590,6 @@ fun BuyLogApp(viewModel: MainViewModel, addPaymentRequest: Int = 0) {
                 viewModel.save(draft, editing?.payment)
                 showEditor = false
             },
-        )
-    }
-
-    if (showTagManager) {
-        TagManagerDialog(
-            tags = state.tags,
-            rules = state.autoTagRules,
-            onDismiss = { showTagManager = false },
-            onAdd = viewModel::addTag,
-            onUpdate = viewModel::updateTag,
-            onDelete = viewModel::deleteTag,
-            onAddRule = viewModel::addAutoTagRule,
-            onDeleteRule = viewModel::deleteAutoTagRule,
         )
     }
 
@@ -1843,6 +1840,194 @@ private fun TagManagerDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
     )
+}
+
+@Composable
+private fun TagManagerPage(
+    modifier: Modifier = Modifier,
+    tags: List<TagEntity>,
+    rules: List<AutoTagRuleEntity>,
+    onAdd: (String, Boolean) -> Unit,
+    onUpdate: (TagEntity, String, Boolean) -> Unit,
+    onDelete: (TagEntity) -> Unit,
+    onAddRule: (String, Long) -> Unit,
+    onDeleteRule: (AutoTagRuleEntity) -> Unit,
+) {
+    var tagDialogOpen by rememberSaveable { mutableStateOf(false) }
+    var editingTag by remember { mutableStateOf<TagEntity?>(null) }
+    var tagName by rememberSaveable { mutableStateOf("") }
+    var excludeFromSpending by rememberSaveable { mutableStateOf(false) }
+    var ruleDialogOpen by rememberSaveable { mutableStateOf(false) }
+    var rulePhrase by rememberSaveable { mutableStateOf("") }
+    var ruleTagId by rememberSaveable { mutableStateOf<Long?>(null) }
+    LaunchedEffect(tags) {
+        if (ruleTagId !in tags.map { it.id }) ruleTagId = tags.firstOrNull()?.id
+    }
+
+    Column(modifier.fillMaxSize().padding(16.dp)) {
+        Box(Modifier.weight(1f)) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                item {
+                    Text("등록된 태그", style = MaterialTheme.typography.labelLarge)
+                    Text(
+                        "태그별 소비 집계 제외 여부를 관리하고, 사용처나 메모에 따른 자동 태그 규칙을 설정합니다.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (tags.isEmpty()) {
+                    item { Text("아직 등록된 태그가 없습니다.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                } else {
+                    items(tags, key = { it.id }) { tag ->
+                        Card(Modifier.fillMaxWidth()) {
+                            Row(
+                                Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("#${tag.name}", fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        if (tag.excludeFromSpending) "소비 집계 제외" else "소비 집계 포함",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                TextButton(onClick = {
+                                    editingTag = tag
+                                    tagName = tag.name
+                                    excludeFromSpending = tag.excludeFromSpending
+                                    tagDialogOpen = true
+                                }) { Text("설정") }
+                                TextButton(onClick = { onDelete(tag) }) { Text("삭제") }
+                            }
+                        }
+                    }
+                }
+                item {
+                    HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("자동 태그 규칙", fontWeight = FontWeight.Bold)
+                            Text(
+                                "사용처나 메모에 문구가 포함되면 선택한 태그를 자동으로 추가합니다.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        TextButton(
+                            onClick = { rulePhrase = ""; ruleDialogOpen = true },
+                            enabled = tags.isNotEmpty(),
+                        ) { Text("추가") }
+                    }
+                }
+                if (rules.isEmpty()) {
+                    item { Text("등록된 자동 규칙이 없습니다.", style = MaterialTheme.typography.bodySmall) }
+                } else {
+                    items(rules, key = { "rule-${it.id}" }) { rule ->
+                        val tagNameForRule = tags.firstOrNull { it.id == rule.tagId }?.name ?: "삭제된 태그"
+                        Card(Modifier.fillMaxWidth()) {
+                            Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("“${rule.phrase}” 포함", fontWeight = FontWeight.SemiBold)
+                                    Text("→ #$tagNameForRule", style = MaterialTheme.typography.bodySmall)
+                                }
+                                TextButton(onClick = { onDeleteRule(rule) }) { Text("삭제") }
+                            }
+                        }
+                    }
+                }
+            }
+            FloatingActionButton(
+                onClick = {
+                    editingTag = null
+                    tagName = ""
+                    excludeFromSpending = false
+                    tagDialogOpen = true
+                },
+                modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp),
+            ) { Text("+", style = MaterialTheme.typography.headlineMedium) }
+        }
+    }
+
+    if (tagDialogOpen) {
+        AlertDialog(
+            onDismissRequest = { tagDialogOpen = false },
+            title = { Text(if (editingTag == null) "태그 추가" else "태그 설정") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(
+                        value = tagName,
+                        onValueChange = { tagName = it },
+                        label = { Text("태그 이름") },
+                        placeholder = { Text("예: 업무 테스트, 식비") },
+                        singleLine = true,
+                        readOnly = editingTag != null,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("소비 집계 제외", Modifier.weight(1f))
+                        Switch(checked = excludeFromSpending, onCheckedChange = { excludeFromSpending = it })
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (tagName.isNotBlank()) {
+                            editingTag?.let { onUpdate(it, tagName, excludeFromSpending) }
+                                ?: onAdd(tagName, excludeFromSpending)
+                            tagDialogOpen = false
+                        }
+                    },
+                    enabled = tagName.isNotBlank(),
+                ) { Text(if (editingTag == null) "등록" else "저장") }
+            },
+            dismissButton = { TextButton(onClick = { tagDialogOpen = false }) { Text("취소") } },
+        )
+    }
+
+    if (ruleDialogOpen) {
+        AlertDialog(
+            onDismissRequest = { ruleDialogOpen = false },
+            title = { Text("자동 태그 규칙 추가") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(
+                        value = rulePhrase,
+                        onValueChange = { rulePhrase = it },
+                        label = { Text("자동 적용할 문구") },
+                        placeholder = { Text("예: 테스트몰, PG_TEST") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Text("적용할 태그", style = MaterialTheme.typography.labelMedium)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        tags.forEach { tag ->
+                            FilterChip(
+                                selected = ruleTagId == tag.id,
+                                onClick = { ruleTagId = tag.id },
+                                label = { Text(tag.name) },
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        ruleTagId?.let { onAddRule(rulePhrase, it) }
+                        rulePhrase = ""
+                        ruleDialogOpen = false
+                    },
+                    enabled = rulePhrase.isNotBlank() && ruleTagId != null,
+                ) { Text("등록") }
+            },
+            dismissButton = { TextButton(onClick = { ruleDialogOpen = false }) { Text("취소") } },
+        )
+    }
 }
 
 @Composable

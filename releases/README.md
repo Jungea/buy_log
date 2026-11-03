@@ -22,5 +22,6 @@
 | 1.0.6 | 완료 | 앱별 알림 등록 상태와 탭 분리 | [상세](1.0.6.md) · [디버그 APK 다운로드](https://github.com/Jungea/buy_log/raw/refs/heads/main/releases/1.0.6/buy-log-1.0.6-debug.apk) |
 | 1.0.7 | 완료 | 앱 이력·앱별 등록 UI 개선 | [상세](1.0.7.md) · [디버그 APK 다운로드](https://github.com/Jungea/buy_log/raw/refs/heads/main/releases/1.0.7/buy-log-1.0.7-debug.apk) |
 | 1.0.8 | 완료 | 잉크 블루 테마와 앱 이력 개선 | [상세](1.0.8.md) · [디버그 APK 다운로드](https://github.com/Jungea/buy_log/raw/refs/heads/main/releases/1.0.8/buy-log-1.0.8-debug.apk) |
+| 1.0.9 | 완료 | 태그 관리 페이지 전환 | [상세](1.0.9.md) · [디버그 APK 다운로드](https://github.com/Jungea/buy_log/raw/refs/heads/main/releases/1.0.9/buy-log-1.0.9-debug.apk) |
 
 완료된 릴리즈는 구현·검증 결과를 기록하고, 사용자가 범위를 확정한 후속 릴리즈는 계획 문서를 먼저 작성합니다.
