@@ -9,6 +9,7 @@ import com.example.buylog.domain.NotificationPaymentRule
 object NotificationRecognitionSettings {
     private const val preferencesName = "notification_recognition"
     private const val selectedPackagesKey = "selected_packages"
+    private const val blockedPackagesKey = "blocked_packages"
     private const val defaultMethodPrefix = "default_method_"
     private const val rulesPrefix = "rules_"
 
@@ -21,11 +22,31 @@ object NotificationRecognitionSettings {
     fun isSelected(context: Context, packageName: String): Boolean =
         packageName in getSelectedPackages(context)
 
+    fun getBlockedPackages(context: Context): Set<String> =
+        context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
+            .getStringSet(blockedPackagesKey, emptySet())
+            ?.toSet()
+            .orEmpty()
+
+    fun isBlocked(context: Context, packageName: String): Boolean =
+        packageName in getBlockedPackages(context)
+
     fun setSelected(context: Context, packageName: String, selected: Boolean) {
         val packages = getSelectedPackages(context).toMutableSet()
         if (selected) packages += packageName else packages -= packageName
         context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
             .edit { putStringSet(selectedPackagesKey, packages) }
+    }
+
+    fun setBlocked(context: Context, packageName: String, blocked: Boolean) {
+        val blockedPackages = getBlockedPackages(context).toMutableSet()
+        if (blocked) blockedPackages += packageName else blockedPackages -= packageName
+        val selectedPackages = getSelectedPackages(context).toMutableSet()
+        if (blocked) selectedPackages -= packageName
+        context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE).edit {
+            putStringSet(blockedPackagesKey, blockedPackages)
+            putStringSet(selectedPackagesKey, selectedPackages)
+        }
     }
 
     fun getDefaultPaymentMethodId(context: Context, packageName: String): Long? =

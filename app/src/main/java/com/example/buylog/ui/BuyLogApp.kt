@@ -800,11 +800,11 @@ private fun NotificationManagementScreen(
     var page by rememberSaveable { mutableStateOf(0) }
     var showAllHistory by rememberSaveable { mutableStateOf(false) }
     var detailPackage by rememberSaveable { mutableStateOf<String?>(null) }
-    var appStatusTab by rememberSaveable { mutableStateOf(0) }
+    var appStatusTab by rememberSaveable { mutableStateOf(1) }
     var settingsVersion by remember { mutableStateOf(0) }
     val apps = events.distinctBy { it.packageName }
     val visibleHistory = if (showAllHistory) {
-        events
+        events.filterNot { it.packageName in blockedPackages }
     } else {
         events.filter {
             it.packageName in selectedPackages &&
@@ -913,7 +913,7 @@ private fun NotificationManagementScreen(
                             )
                         }
                         Text(
-                            if (showAllHistory) "수집된 모든 앱 알림입니다."
+                            if (showAllHistory) "차단한 앱을 제외한 수집된 모든 앱 알림입니다."
                             else "허용한 앱에서 결제 후보로 판별된 알림입니다.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,

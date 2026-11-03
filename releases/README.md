@@ -19,6 +19,6 @@
 | 1.0.3 | 완료 | QA 결제 알림, 앱 이력과 앱별 결제수단 연결 | [상세](1.0.3.md) · [디버그 APK 다운로드](https://github.com/Jungea/buy_log/raw/refs/heads/main/releases/1.0.3/buy-log-1.0.3-debug.apk) |
 | 1.0.4 | 완료 | 알림 리스너 연결 끊김 자동 재연결 | [상세](1.0.4.md) · [디버그 APK 다운로드](https://github.com/Jungea/buy_log/raw/refs/heads/main/releases/1.0.4/buy-log-1.0.4-debug.apk) |
 | 1.0.5 | 완료 | 결제수단 관리 전용 페이지 | [상세](1.0.5.md) · [디버그 APK 다운로드](https://github.com/Jungea/buy_log/raw/refs/heads/main/releases/1.0.5/buy-log-1.0.5-debug.apk) |
-| 1.0.6 | 완료 | 앱별 알림 등록 상태와 탭 분리 | [상세](1.0.6.md) |
+| 1.0.6 | 완료 | 앱별 알림 등록 상태와 탭 분리 | [상세](1.0.6.md) · [디버그 APK 다운로드](https://github.com/Jungea/buy_log/raw/refs/heads/main/releases/1.0.6/buy-log-1.0.6-debug.apk) |
 
 완료된 릴리즈는 구현·검증 결과를 기록하고, 사용자가 범위를 확정한 후속 릴리즈는 계획 문서를 먼저 작성합니다.
