@@ -17,5 +17,6 @@
 | 1.0.1 | 완료 | 기본 미분류 수단과 연결 결제 이동형 결제수단 삭제 | [상세](1.0.1.md) · [디버그 APK 다운로드](https://github.com/Jungea/buy_log/raw/refs/heads/main/releases/1.0.1/buy-log-1.0.1-debug.apk) |
 | 1.0.2 | 완료 | 주말 월급일 보정과 월별 실제 월급일 지정 | [상세](1.0.2.md) · [디버그 APK 다운로드](https://github.com/Jungea/buy_log/raw/refs/heads/main/releases/1.0.2/buy-log-1.0.2-debug.apk) |
 | 1.0.3 | 완료 | QA 결제 알림, 앱 이력과 앱별 결제수단 연결 | [상세](1.0.3.md) · [디버그 APK 다운로드](https://github.com/Jungea/buy_log/raw/refs/heads/main/releases/1.0.3/buy-log-1.0.3-debug.apk) |
+| 1.0.4 | 완료 | 알림 리스너 연결 끊김 자동 재연결 | [상세](1.0.4.md) · [디버그 APK 다운로드](https://github.com/Jungea/buy_log/raw/refs/heads/main/releases/1.0.4/buy-log-1.0.4-debug.apk) |
 
 완료된 릴리즈는 구현·검증 결과를 기록하고, 사용자가 범위를 확정한 후속 릴리즈는 계획 문서를 먼저 작성합니다.

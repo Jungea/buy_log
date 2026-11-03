@@ -1,6 +1,7 @@
 package com.example.buylog
 
 import android.app.Notification
+import android.content.ComponentName
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import com.example.buylog.data.NotificationEventDraft
@@ -13,6 +14,11 @@ import kotlinx.coroutines.launch
 
 class PaymentNotificationListenerService : NotificationListenerService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    override fun onListenerDisconnected() {
+        requestRebind(ComponentName(this, PaymentNotificationListenerService::class.java))
+        super.onListenerDisconnected()
+    }
 
     override fun onNotificationPosted(notification: StatusBarNotification) {
         if (!NotificationCaptureSettings.isEnabled(this)) return
