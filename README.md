@@ -1,10 +1,10 @@
 # BuyLog
 
-[최신 릴리즈 APK 바로 다운로드 (Release 1.0.7)](https://github.com/Jungea/buy_log/raw/refs/heads/main/releases/1.0.7/buy-log-1.0.7-debug.apk)
+[최신 릴리즈 APK 바로 다운로드 (Release 1.0.8)](https://github.com/Jungea/buy_log/raw/refs/heads/main/releases/1.0.8/buy-log-1.0.8-debug.apk)
 
 카드·은행·간편결제 알림을 바탕으로 실제 소비를 정확하게 관리하는 개인용 Android 앱입니다.
 
-현재는 **Release 1.0.7**까지 구현되어 있습니다. 서버 없이 기기 내부에 데이터를 저장하며, 이후 기능도 검증된 요구에 따라 점진적으로 추가합니다.
+현재는 **Release 1.0.8**까지 구현되어 있습니다. 서버 없이 기기 내부에 데이터를 저장하며, 이후 기능도 검증된 요구에 따라 점진적으로 추가합니다.
 
 ## 현재 제공 기능
 
@@ -145,5 +145,6 @@ app/build/outputs/apk/debug/app-debug.apk
 - [Release 1.0.5 결제수단 관리 페이지 정리](releases/1.0.5.md)
 - [Release 1.0.6 앱별 알림 등록 상태 분리](releases/1.0.6.md)
 - [Release 1.0.7 앱 이력·앱별 등록 UI 개선](releases/1.0.7.md)
+- [Release 1.0.8 잉크 블루 테마와 앱 이력 개선](releases/1.0.8.md)
 
 향후 개발 시에는 루트의 [AGENTS.md](AGENTS.md)에 정의된 범위와 검증 규칙을 따릅니다.

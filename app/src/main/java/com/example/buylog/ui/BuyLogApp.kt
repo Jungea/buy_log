@@ -814,6 +814,9 @@ private fun NotificationManagementScreen(
     var settingsVersion by remember { mutableStateOf(0) }
     val historyListState = rememberLazyListState()
     val historyCoroutineScope = rememberCoroutineScope()
+    LaunchedEffect(page) {
+        if (page == 1) historyListState.scrollToItem(0)
+    }
     val apps = events.distinctBy { it.packageName }
     val visibleHistory = if (showAllHistory) {
         events.filterNot { it.packageName in blockedPackages }
@@ -912,16 +915,16 @@ private fun NotificationManagementScreen(
                         modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        PrimaryTabRow(selectedTabIndex = if (showAllHistory) 1 else 0) {
-                            Tab(
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(
                                 selected = !showAllHistory,
                                 onClick = { showAllHistory = false },
-                                text = { Text("결제 알림") },
+                                label = { Text("결제 알림") },
                             )
-                            Tab(
+                            FilterChip(
                                 selected = showAllHistory,
                                 onClick = { showAllHistory = true },
-                                text = { Text("전체 알림") },
+                                label = { Text("전체 알림") },
                             )
                         }
                         Text(
@@ -961,16 +964,14 @@ private fun NotificationManagementScreen(
                                         }
                                     }
                                 }
-                                if (historyListState.firstVisibleItemIndex > 0) {
-                                    SmallFloatingActionButton(
-                                        onClick = {
-                                            historyCoroutineScope.launch {
-                                                historyListState.animateScrollToItem(0)
-                                            }
-                                        },
-                                        modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp),
-                                    ) { Text("↑", style = MaterialTheme.typography.titleLarge) }
-                                }
+                                SmallFloatingActionButton(
+                                    onClick = {
+                                        historyCoroutineScope.launch {
+                                            historyListState.animateScrollToItem(0)
+                                        }
+                                    },
+                                    modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp),
+                                ) { Text("↑", style = MaterialTheme.typography.titleLarge) }
                             }
                         }
                     }
@@ -983,7 +984,14 @@ private fun NotificationManagementScreen(
                                 verticalArrangement = Arrangement.spacedBy(12.dp),
                             ) {
                                 item {
-                                    PrimaryTabRow(selectedTabIndex = appStatusTab) {
+                                    Text(
+                                        "알림을 한 번 이상 받은 앱만 표시됩니다.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                item {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                         listOf("미허용", "허용", "차단").forEachIndexed { index, label ->
                                             val count = apps.count { app ->
                                                 when (index) {
@@ -992,19 +1000,13 @@ private fun NotificationManagementScreen(
                                                     else -> app.packageName !in selectedPackages && app.packageName !in blockedPackages
                                                 }
                                             }
-                                            Tab(
+                                            FilterChip(
                                                 selected = appStatusTab == index,
                                                 onClick = { appStatusTab = index },
-                                                text = { Text("$label $count") },
+                                                label = { Text("$label $count") },
                                             )
                                         }
                                     }
-                                }
-                                item {
-                                    Text(
-                                        "알림을 한 번 이상 받은 앱만 표시됩니다.",
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
                                 }
                                 val filteredApps = apps.filter { app ->
                                     when (appStatusTab) {
@@ -1078,24 +1080,24 @@ private fun NotificationManagementScreen(
                                         packageName in blockedPackages -> 2
                                         else -> 0
                                     }
-                                    PrimaryTabRow(selectedTabIndex = status) {
-                                        Tab(
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        FilterChip(
                                             selected = status == 0,
                                             onClick = {
                                                 onPackageSelectedChange(packageName, false)
                                                 onPackageBlockedChange(packageName, false)
                                             },
-                                            text = { Text("미허용") },
+                                            label = { Text("미허용") },
                                         )
-                                        Tab(
+                                        FilterChip(
                                             selected = status == 1,
                                             onClick = { onPackageSelectedChange(packageName, true) },
-                                            text = { Text("허용") },
+                                            label = { Text("허용") },
                                         )
-                                        Tab(
+                                        FilterChip(
                                             selected = status == 2,
                                             onClick = { onPackageBlockedChange(packageName, true) },
-                                            text = { Text("차단") },
+                                            label = { Text("차단") },
                                         )
                                     }
                                 }
