@@ -39,6 +39,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Tab
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -122,6 +124,9 @@ fun BuyLogApp(viewModel: MainViewModel, addPaymentRequest: Int = 0) {
     var selectedNotificationPackages by remember {
         mutableStateOf(NotificationRecognitionSettings.getSelectedPackages(context))
     }
+    var blockedNotificationPackages by remember {
+        mutableStateOf(NotificationRecognitionSettings.getBlockedPackages(context))
+    }
     var missedPaymentNotificationsEnabled by remember {
         mutableStateOf(MissedPaymentPreferences.isEnabled(context))
     }
@@ -146,7 +151,6 @@ fun BuyLogApp(viewModel: MainViewModel, addPaymentRequest: Int = 0) {
     val snackbarHostState = remember { SnackbarHostState() }
     var editing by remember { mutableStateOf<PaymentWithMethod?>(null) }
     var showEditor by remember { mutableStateOf(false) }
-    var showMethodManager by remember { mutableStateOf(false) }
     var showNotificationLog by remember { mutableStateOf(false) }
     var showTagManager by remember { mutableStateOf(false) }
     var showManagementMenu by remember { mutableStateOf(false) }
@@ -226,35 +230,52 @@ fun BuyLogApp(viewModel: MainViewModel, addPaymentRequest: Int = 0) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("결제 기록") },
+                title = { Text(if (page == 4) "결제수단 관리" else "결제 기록") },
+                navigationIcon = {
+                    if (page == 4) TextButton(onClick = { page = 0 }) { Text("뒤로") }
+                },
                 actions = {
-                    TextButton(onClick = { showManagementMenu = true }) { Text("관리") }
-                    DropdownMenu(expanded = showManagementMenu, onDismissRequest = { showManagementMenu = false }) {
-                        DropdownMenuItem(text = { Text("알림 관리") }, onClick = { showManagementMenu = false; showNotificationLog = true })
-                        DropdownMenuItem(text = { Text("결제수단 관리") }, onClick = { showManagementMenu = false; showMethodManager = true })
-                        DropdownMenuItem(text = { Text("태그 관리") }, onClick = { showManagementMenu = false; showTagManager = true })
-                        DropdownMenuItem(text = { Text("백업 및 복원") }, onClick = { showManagementMenu = false; showBackupDialog = true })
+                    if (page != 4) {
+                        TextButton(onClick = { showManagementMenu = true }) { Text("관리") }
+                        DropdownMenu(expanded = showManagementMenu, onDismissRequest = { showManagementMenu = false }) {
+                            DropdownMenuItem(text = { Text("알림 관리") }, onClick = { showManagementMenu = false; showNotificationLog = true })
+                            DropdownMenuItem(text = { Text("결제수단 관리") }, onClick = { showManagementMenu = false; page = 4 })
+                            DropdownMenuItem(text = { Text("태그 관리") }, onClick = { showManagementMenu = false; showTagManager = true })
+                            DropdownMenuItem(text = { Text("백업 및 복원") }, onClick = { showManagementMenu = false; showBackupDialog = true })
+                        }
                     }
                 },
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
-            NavigationBar {
-                NavigationBarItem(selected = page == 0, onClick = { page = 0 }, icon = { Text("월간") })
-                NavigationBarItem(selected = page == 1, onClick = { page = 1 }, icon = { Text("결제 내역") })
-                NavigationBarItem(selected = page == 2, onClick = { page = 2 }, icon = { Text("카드") })
-                NavigationBarItem(selected = page == 3, onClick = { page = 3 }, icon = { Text("패턴") })
+            if (page != 4) {
+                NavigationBar {
+                    NavigationBarItem(selected = page == 0, onClick = { page = 0 }, icon = { Text("월간") })
+                    NavigationBarItem(selected = page == 1, onClick = { page = 1 }, icon = { Text("결제 내역") })
+                    NavigationBarItem(selected = page == 2, onClick = { page = 2 }, icon = { Text("카드") })
+                    NavigationBarItem(selected = page == 3, onClick = { page = 3 }, icon = { Text("패턴") })
+                }
             }
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = {
-                editing = null
-                showEditor = true
-            }) { Text("+", style = MaterialTheme.typography.headlineMedium) }
+            if (page != 4) {
+                FloatingActionButton(onClick = {
+                    editing = null
+                    showEditor = true
+                }) { Text("+", style = MaterialTheme.typography.headlineMedium) }
+            }
         },
     ) { padding ->
-        LazyColumn(
+        if (page == 4) {
+            PaymentMethodManagerPage(
+                methods = state.methods,
+                onDismiss = { page = 0 },
+                onAddMethod = viewModel::addPaymentMethod,
+                onUpdateCardSettings = viewModel::updateCardSettings,
+                onDeleteMethod = { method -> deletingMethod = method },
+            )
+        } else LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp, 8.dp, 16.dp, 96.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -551,19 +572,6 @@ fun BuyLogApp(viewModel: MainViewModel, addPaymentRequest: Int = 0) {
         )
     }
 
-    if (showMethodManager) {
-        PaymentMethodManagerDialog(
-            methods = state.methods,
-            onDismiss = { showMethodManager = false },
-            onAddMethod = viewModel::addPaymentMethod,
-            onUpdateCardSettings = viewModel::updateCardSettings,
-            onDeleteMethod = { method ->
-                showMethodManager = false
-                deletingMethod = method
-            },
-        )
-    }
-
     if (showTagManager) {
         TagManagerDialog(
             tags = state.tags,
@@ -628,6 +636,7 @@ fun BuyLogApp(viewModel: MainViewModel, addPaymentRequest: Int = 0) {
             notificationAccessEnabled = notificationAccessEnabled,
             notificationCaptureEnabled = notificationCaptureEnabled,
             selectedPackages = selectedNotificationPackages,
+            blockedPackages = blockedNotificationPackages,
             onCaptureEnabledChange = { enabled ->
                 NotificationCaptureSettings.setEnabled(context, enabled)
                 notificationCaptureEnabled = enabled
@@ -638,7 +647,16 @@ fun BuyLogApp(viewModel: MainViewModel, addPaymentRequest: Int = 0) {
             onPackageSelectedChange = { packageName, selected ->
                 NotificationRecognitionSettings.setSelected(context, packageName, selected)
                 selectedNotificationPackages = NotificationRecognitionSettings.getSelectedPackages(context)
+                if (selected) {
+                    NotificationRecognitionSettings.setBlocked(context, packageName, false)
+                    blockedNotificationPackages = NotificationRecognitionSettings.getBlockedPackages(context)
+                }
                 if (selected) viewModel.reprocessHistoricalNotifications(packageName)
+            },
+            onPackageBlockedChange = { packageName, blocked ->
+                NotificationRecognitionSettings.setBlocked(context, packageName, blocked)
+                blockedNotificationPackages = NotificationRecognitionSettings.getBlockedPackages(context)
+                selectedNotificationPackages = NotificationRecognitionSettings.getSelectedPackages(context)
             },
             onSendQaNotification = {
                 if (
@@ -766,9 +784,11 @@ private fun NotificationManagementScreen(
     notificationAccessEnabled: Boolean,
     notificationCaptureEnabled: Boolean,
     selectedPackages: Set<String>,
+    blockedPackages: Set<String>,
     onCaptureEnabledChange: (Boolean) -> Unit,
     onOpenSettings: () -> Unit,
     onPackageSelectedChange: (String, Boolean) -> Unit,
+    onPackageBlockedChange: (String, Boolean) -> Unit,
     onSendQaNotification: () -> Unit,
     onConfirmDuplicateAsSame: (NotificationEventEntity) -> Unit,
     onConfirmDuplicateAsSeparate: (NotificationEventEntity) -> Unit,
@@ -780,6 +800,7 @@ private fun NotificationManagementScreen(
     var page by rememberSaveable { mutableStateOf(0) }
     var showAllHistory by rememberSaveable { mutableStateOf(false) }
     var detailPackage by rememberSaveable { mutableStateOf<String?>(null) }
+    var appStatusTab by rememberSaveable { mutableStateOf(0) }
     var settingsVersion by remember { mutableStateOf(0) }
     val apps = events.distinctBy { it.packageName }
     val visibleHistory = if (showAllHistory) {
@@ -937,9 +958,37 @@ private fun NotificationManagementScreen(
                                 verticalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
                                 item {
-                                    Text("알림을 한 번 이상 받은 앱만 표시됩니다.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    PrimaryTabRow(selectedTabIndex = appStatusTab) {
+                                        listOf("미허용", "허용", "차단").forEachIndexed { index, label ->
+                                            val count = apps.count { app ->
+                                                when (index) {
+                                                    1 -> app.packageName in selectedPackages
+                                                    2 -> app.packageName in blockedPackages
+                                                    else -> app.packageName !in selectedPackages && app.packageName !in blockedPackages
+                                                }
+                                            }
+                                            Tab(
+                                                selected = appStatusTab == index,
+                                                onClick = { appStatusTab = index },
+                                                text = { Text("$label $count") },
+                                            )
+                                        }
+                                    }
                                 }
-                                items(apps, key = { it.packageName }) { app ->
+                                item {
+                                    Text(
+                                        "알림을 한 번 이상 받은 앱만 표시됩니다. 앱을 차단하면 자동 등록 대상에서 제외됩니다.",
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                val filteredApps = apps.filter { app ->
+                                    when (appStatusTab) {
+                                        1 -> app.packageName in selectedPackages
+                                        2 -> app.packageName in blockedPackages
+                                        else -> app.packageName !in selectedPackages && app.packageName !in blockedPackages
+                                    }
+                                }
+                                items(filteredApps, key = { it.packageName }) { app ->
                                     OutlinedCard(
                                         onClick = { detailPackage = app.packageName },
                                         modifier = Modifier.fillMaxWidth(),
@@ -952,7 +1001,13 @@ private fun NotificationManagementScreen(
                                                 Text(app.appName, fontWeight = FontWeight.Bold)
                                                 Text(app.packageName, style = MaterialTheme.typography.labelSmall)
                                             }
-                                            Text(if (app.packageName in selectedPackages) "허용됨 ›" else "미허용 ›")
+                                            Text(
+                                                when {
+                                                    app.packageName in selectedPackages -> "허용 ›"
+                                                    app.packageName in blockedPackages -> "차단 ›"
+                                                    else -> "미허용 ›"
+                                                },
+                                            )
                                         }
                                     }
                                 }
@@ -976,11 +1031,30 @@ private fun NotificationManagementScreen(
                                     Text(packageName, style = MaterialTheme.typography.labelSmall)
                                 }
                                 item {
-                                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                        Text("결제 알림 허용", Modifier.weight(1f), fontWeight = FontWeight.Bold)
-                                        Switch(
-                                            checked = packageName in selectedPackages,
-                                            onCheckedChange = { onPackageSelectedChange(packageName, it) },
+                                    Text("앱별 등록 상태", fontWeight = FontWeight.Bold)
+                                    val status = when {
+                                        packageName in selectedPackages -> 1
+                                        packageName in blockedPackages -> 2
+                                        else -> 0
+                                    }
+                                    PrimaryTabRow(selectedTabIndex = status) {
+                                        Tab(
+                                            selected = status == 0,
+                                            onClick = {
+                                                onPackageSelectedChange(packageName, false)
+                                                onPackageBlockedChange(packageName, false)
+                                            },
+                                            text = { Text("미허용") },
+                                        )
+                                        Tab(
+                                            selected = status == 1,
+                                            onClick = { onPackageSelectedChange(packageName, true) },
+                                            text = { Text("허용") },
+                                        )
+                                        Tab(
+                                            selected = status == 2,
+                                            onClick = { onPackageBlockedChange(packageName, true) },
+                                            text = { Text("차단") },
                                         )
                                     }
                                 }
@@ -1687,7 +1761,7 @@ private fun TagManagerDialog(
 }
 
 @Composable
-private fun PaymentMethodManagerDialog(
+private fun PaymentMethodManagerPage(
     methods: List<PaymentMethodEntity>,
     onDismiss: () -> Unit,
     onAddMethod: (String) -> Unit,
@@ -1702,11 +1776,11 @@ private fun PaymentMethodManagerDialog(
     var startDay by remember { mutableStateOf("1") }
     var target by remember { mutableStateOf("0") }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("결제수단 관리") },
-        text = {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(Modifier.fillMaxSize().padding(16.dp)) {
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
                 item {
                     Text(
                         "등록된 결제수단",
@@ -1787,9 +1861,13 @@ private fun PaymentMethodManagerDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-            }
-        },
-        confirmButton = {
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TextButton(onClick = onDismiss) { Text("닫기") }
             Button(onClick = {
                 if (newMethod.isBlank()) {
                     error = "결제수단 이름을 입력해 주세요."
@@ -1798,9 +1876,8 @@ private fun PaymentMethodManagerDialog(
                     newMethod = ""
                 }
             }) { Text("추가") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
-    )
+        }
+    }
 }
 
 private fun Long.asWon(): String = "${moneyFormatter.format(this)}원"

@@ -1,10 +1,10 @@
 # BuyLog
 
-[최신 릴리즈 APK 바로 다운로드 (Release 1.0.4)](https://github.com/Jungea/buy_log/raw/refs/heads/main/releases/1.0.4/buy-log-1.0.4-debug.apk)
+[최신 릴리즈 APK 바로 다운로드 (Release 1.0.5)](https://github.com/Jungea/buy_log/raw/refs/heads/main/releases/1.0.5/buy-log-1.0.5-debug.apk)
 
 카드·은행·간편결제 알림을 바탕으로 실제 소비를 정확하게 관리하는 개인용 Android 앱입니다.
 
-현재는 **Release 1.0.4**까지 구현되어 있습니다. 서버 없이 기기 내부에 데이터를 저장하며, 이후 기능도 검증된 요구에 따라 점진적으로 추가합니다.
+현재는 **Release 1.0.5**까지 구현되어 있습니다. 서버 없이 기기 내부에 데이터를 저장하며, 이후 기능도 검증된 요구에 따라 점진적으로 추가합니다.
 
 ## 현재 제공 기능
 
@@ -25,6 +25,7 @@
 - 월급일이 주말이면 직전 금요일로 보정하고 회사 휴무 등은 월별 실제 월급일로 직접 지정
 - QA용 결제 알림 발행, 알림 이력 필터, 앱별 결제수단·키워드 연결 설정
 - 알림 리스너 연결 끊김 시 자동 재연결 요청
+- 결제수단 관리 전용 페이지
 - 여러 태그 지정과 태그별 소비 집계 제외
 - 카드별 계산 기간·사용 이력·실적 목표와 진행률
 - 사용처·메모의 특정 문구에 따라 태그를 자동으로 추가하는 규칙
@@ -140,5 +141,6 @@ app/build/outputs/apk/debug/app-debug.apk
 - [Release 1.0.2 월급일 보정·지정일 정리](releases/1.0.2.md)
 - [Release 1.0.3 알림 QA·앱 선택 정리](releases/1.0.3.md)
 - [Release 1.0.4 알림 리스너 재연결 정리](releases/1.0.4.md)
+- [Release 1.0.5 결제수단 관리 페이지 정리](releases/1.0.5.md)
 
 향후 개발 시에는 루트의 [AGENTS.md](AGENTS.md)에 정의된 범위와 검증 규칙을 따릅니다.

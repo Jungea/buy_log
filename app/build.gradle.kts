@@ -12,8 +12,8 @@ android {
         applicationId = "com.example.buylog"
         minSdk = 26
         targetSdk = 37
-        versionCode = 14
-        versionName = "1.0.4"
+        versionCode = 16
+        versionName = "1.0.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
