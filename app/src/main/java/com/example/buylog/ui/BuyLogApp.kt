@@ -280,6 +280,7 @@ fun BuyLogApp(viewModel: MainViewModel, addPaymentRequest: Int = 0) {
         if (page == 4) {
             PaymentMethodManagerPage(
                 methods = state.methods,
+                modifier = Modifier.padding(padding),
                 onDismiss = { page = 0 },
                 onAddMethod = viewModel::addPaymentMethod,
                 onUpdateCardSettings = viewModel::updateCardSettings,
@@ -814,7 +815,7 @@ private fun NotificationManagementScreen(
     var settingsVersion by remember { mutableStateOf(0) }
     val historyListState = rememberLazyListState()
     val historyCoroutineScope = rememberCoroutineScope()
-    LaunchedEffect(page) {
+    LaunchedEffect(page, showAllHistory) {
         if (page == 1) historyListState.scrollToItem(0)
     }
     val apps = events.distinctBy { it.packageName }
@@ -964,14 +965,19 @@ private fun NotificationManagementScreen(
                                         }
                                     }
                                 }
-                                SmallFloatingActionButton(
-                                    onClick = {
-                                        historyCoroutineScope.launch {
-                                            historyListState.animateScrollToItem(0)
-                                        }
-                                    },
-                                    modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp),
-                                ) { Text("↑", style = MaterialTheme.typography.titleLarge) }
+                                if (
+                                    historyListState.firstVisibleItemIndex > 0 ||
+                                        historyListState.firstVisibleItemScrollOffset > 0
+                                ) {
+                                    SmallFloatingActionButton(
+                                        onClick = {
+                                            historyCoroutineScope.launch {
+                                                historyListState.animateScrollToItem(0)
+                                            }
+                                        },
+                                        modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp),
+                                    ) { Text("↑", style = MaterialTheme.typography.titleLarge) }
+                                }
                             }
                         }
                     }
@@ -1842,8 +1848,9 @@ private fun TagManagerDialog(
 @Composable
 private fun PaymentMethodManagerPage(
     methods: List<PaymentMethodEntity>,
+    modifier: Modifier = Modifier,
     onDismiss: () -> Unit,
-    onAddMethod: (String) -> Unit,
+    onAddMethod: (String, Boolean) -> Unit,
     onUpdateCardSettings: (PaymentMethodEntity, Boolean, String, Int, Long) -> Unit,
     onDeleteMethod: (PaymentMethodEntity) -> Unit,
 ) {
@@ -1854,22 +1861,29 @@ private fun PaymentMethodManagerPage(
     var company by remember { mutableStateOf("") }
     var startDay by remember { mutableStateOf("1") }
     var target by remember { mutableStateOf("0") }
+    var showAddDialog by rememberSaveable { mutableStateOf(false) }
+    var newMethodIsCard by rememberSaveable { mutableStateOf(false) }
 
-    Column(Modifier.fillMaxSize().padding(16.dp)) {
-        LazyColumn(
-            modifier = Modifier.weight(1f),
+    Column(modifier.fillMaxSize().padding(16.dp)) {
+        Box(Modifier.weight(1f)) {
+            LazyColumn(
+            modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
+            ) {
                 item {
-                    Text(
-                        "등록된 결제수단",
-                        style = MaterialTheme.typography.labelLarge,
-                    )
-                    Text(
-                        "신용카드와 체크카드는 설정에서 카드로 관리하고, 통장·계좌이체·현금은 카드 설정 없이 사용할 수 있어요.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("등록된 결제수단", style = MaterialTheme.typography.labelLarge)
+                            Text(
+                                "신용카드와 체크카드는 설정에서 카드로 관리하고, 통장·계좌이체·현금은 카드 설정 없이 사용할 수 있어요.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                 }
                 if (methods.isEmpty()) {
                     item {
@@ -1881,7 +1895,25 @@ private fun PaymentMethodManagerPage(
                 } else {
                     items(methods, key = { it.id }) { method ->
                         Card(Modifier.fillMaxWidth()) {
-                            Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Row(Modifier.padding(horizontal = 12.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Surface(
+                                    modifier = Modifier.size(40.dp),
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Text(
+                                            when {
+                                                method.name == UNCLASSIFIED_PAYMENT_METHOD_NAME -> "✓"
+                                                method.isCard -> "카"
+                                                else -> "통"
+                                            },
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                            fontWeight = FontWeight.Bold,
+                                        )
+                                    }
+                                }
+                                Spacer(Modifier.width(12.dp))
                                 Column(Modifier.weight(1f)) {
                                     Text(method.name, fontWeight = FontWeight.SemiBold)
                                     if (method.name == UNCLASSIFIED_PAYMENT_METHOD_NAME) {
@@ -1891,8 +1923,13 @@ private fun PaymentMethodManagerPage(
                                 }
                                 if (method.name != UNCLASSIFIED_PAYMENT_METHOD_NAME) {
                                     TextButton(onClick = {
-                                        editingMethod = method; isCard = method.isCard; company = method.cardCompany
+                                        editingMethod = method
+                                        newMethod = method.name
+                                        newMethodIsCard = method.isCard
+                                        isCard = method.isCard
+                                        company = method.cardCompany
                                         startDay = method.periodStartDay.toString(); target = method.performanceTarget.toString()
+                                        showAddDialog = true
                                     }) { Text("설정") }
                                     TextButton(onClick = { onDeleteMethod(method) }) {
                                         Text("삭제", color = MaterialTheme.colorScheme.error)
@@ -1902,25 +1939,20 @@ private fun PaymentMethodManagerPage(
                         }
                     }
                 }
-                editingMethod?.let { method ->
-                    item {
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("${method.name} 설정", fontWeight = FontWeight.Bold)
-                            Row(verticalAlignment = Alignment.CenterVertically) { Text("카드·체크카드로 관리", Modifier.weight(1f)); Switch(isCard, { isCard = it }) }
-                            if (isCard) {
-                                OutlinedTextField(company, { company = it }, label = { Text("카드사") }, modifier = Modifier.fillMaxWidth())
-                                OutlinedTextField(startDay, { startDay = it.filter(Char::isDigit).take(2) }, label = { Text("계산 시작일 (1~31)") }, modifier = Modifier.fillMaxWidth())
-                                OutlinedTextField(target, { target = it.filter(Char::isDigit) }, label = { Text("실적 목표 (원)") }, modifier = Modifier.fillMaxWidth())
-                            }
-                            Button(onClick = {
-                                onUpdateCardSettings(method, isCard, company, startDay.toIntOrNull() ?: 1, target.toLongOrNull() ?: 0)
-                                editingMethod = null
-                            }) { Text("설정 저장") }
-                        }
-                    }
-                }
-                item {
-                    HorizontalDivider(Modifier.padding(vertical = 4.dp))
+            }
+            FloatingActionButton(
+                onClick = { showAddDialog = true },
+                modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp),
+            ) { Text("+", style = MaterialTheme.typography.headlineMedium) }
+        }
+    }
+
+    if (showAddDialog) {
+        AlertDialog(
+            onDismissRequest = { showAddDialog = false },
+            title = { Text(if (editingMethod == null) "결제수단 추가" else "결제수단 설정") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlinedTextField(
                         value = newMethod,
                         onValueChange = {
@@ -1928,34 +1960,82 @@ private fun PaymentMethodManagerPage(
                             error = null
                         },
                         label = { Text("새 결제수단 이름") },
-                        placeholder = { Text("예: 체크카드, 국민은행 통장, 계좌이체, 현금") },
+                        placeholder = { Text("예: 국민카드, 생활비 통장, 현금") },
                         singleLine = true,
+                        readOnly = editingMethod != null,
                         isError = error != null,
                         supportingText = error?.let { message -> { Text(message) } },
                         modifier = Modifier.fillMaxWidth(),
                     )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("체크·신용카드로 관리", Modifier.weight(1f))
+                        Switch(
+                            checked = newMethodIsCard,
+                            onCheckedChange = {
+                                newMethodIsCard = it
+                                isCard = it
+                            },
+                        )
+                    }
+                    if (newMethodIsCard) {
+                        OutlinedTextField(
+                            value = company,
+                            onValueChange = { company = it },
+                            label = { Text("카드사") },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        OutlinedTextField(
+                            value = startDay,
+                            onValueChange = { startDay = it.filter(Char::isDigit).take(2) },
+                            label = { Text("계산 시작일 (1~31)") },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        OutlinedTextField(
+                            value = target,
+                            onValueChange = { target = it.filter(Char::isDigit) },
+                            label = { Text("실적 목표 (원)") },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                     Text(
-                        "계좌이체는 돈이 나간 통장 이름으로 등록하면 지출 경로를 더 정확히 확인할 수 있어요.",
+                        "카드로 선택하면 이후 카드사·계산 시작일·실적 목표를 설정할 수 있어요.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-            horizontalArrangement = Arrangement.End,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            TextButton(onClick = onDismiss) { Text("닫기") }
-            Button(onClick = {
-                if (newMethod.isBlank()) {
-                    error = "결제수단 이름을 입력해 주세요."
-                } else {
-                    onAddMethod(newMethod)
-                    newMethod = ""
-                }
-            }) { Text("추가") }
-        }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    if (newMethod.isBlank()) {
+                        error = "결제수단 이름을 입력해 주세요."
+                    } else if (editingMethod != null) {
+                        onUpdateCardSettings(
+                            editingMethod!!,
+                            newMethodIsCard,
+                            company,
+                            startDay.toIntOrNull() ?: 1,
+                            target.toLongOrNull() ?: 0,
+                        )
+                        editingMethod = null
+                        newMethod = ""
+                        newMethodIsCard = false
+                        isCard = false
+                        company = ""
+                        startDay = "1"
+                        target = "0"
+                        error = null
+                        showAddDialog = false
+                    } else {
+                        onAddMethod(newMethod, newMethodIsCard)
+                        newMethod = ""
+                        newMethodIsCard = false
+                        error = null
+                        showAddDialog = false
+                    }
+                }) { Text("등록") }
+            },
+            dismissButton = { TextButton(onClick = { showAddDialog = false }) { Text("취소") } },
+        )
     }
 }
 

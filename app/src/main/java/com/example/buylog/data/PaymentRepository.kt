@@ -71,10 +71,10 @@ class PaymentRepository(
 
     suspend fun deletePayment(payment: PaymentEntity) = paymentDao.delete(payment)
 
-    suspend fun addPaymentMethod(name: String): Long {
+    suspend fun addPaymentMethod(name: String, isCard: Boolean = false): Long {
         require(name.isNotBlank()) { "결제수단 이름을 입력해 주세요." }
         return paymentMethodDao.insert(
-            PaymentMethodEntity(name = name.trim(), createdAt = clock.millis()),
+            PaymentMethodEntity(name = name.trim(), createdAt = clock.millis(), isCard = isCard),
         )
     }
 

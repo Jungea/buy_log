@@ -81,9 +81,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun addPaymentMethod(name: String) {
+    fun addPaymentMethod(name: String, isCard: Boolean = false) {
         viewModelScope.launch {
-            runCatching { repository.addPaymentMethod(name) }
+            runCatching { repository.addPaymentMethod(name, isCard) }
                 .onSuccess { id ->
                     if (id == -1L) messages.send("이미 같은 이름의 결제수단이 있습니다.")
                 }
