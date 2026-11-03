@@ -11,16 +11,20 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
@@ -37,6 +41,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
@@ -54,17 +59,21 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.size
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.toBitmap
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -93,6 +102,7 @@ import com.example.buylog.domain.CardPerformanceCalculator
 import com.example.buylog.domain.PaymentPatternAnalyzer
 import com.example.buylog.domain.NotificationPaymentRule
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 import java.text.NumberFormat
 import java.time.Instant
 import java.time.LocalDate
@@ -802,6 +812,8 @@ private fun NotificationManagementScreen(
     var detailPackage by rememberSaveable { mutableStateOf<String?>(null) }
     var appStatusTab by rememberSaveable { mutableStateOf(1) }
     var settingsVersion by remember { mutableStateOf(0) }
+    val historyListState = rememberLazyListState()
+    val historyCoroutineScope = rememberCoroutineScope()
     val apps = events.distinctBy { it.packageName }
     val visibleHistory = if (showAllHistory) {
         events.filterNot { it.packageName in blockedPackages }
@@ -900,16 +912,16 @@ private fun NotificationManagementScreen(
                         modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            FilterChip(
+                        PrimaryTabRow(selectedTabIndex = if (showAllHistory) 1 else 0) {
+                            Tab(
                                 selected = !showAllHistory,
                                 onClick = { showAllHistory = false },
-                                label = { Text("결제 알림") },
+                                text = { Text("결제 알림") },
                             )
-                            FilterChip(
+                            Tab(
                                 selected = showAllHistory,
                                 onClick = { showAllHistory = true },
-                                label = { Text("전체 알림") },
+                                text = { Text("전체 알림") },
                             )
                         }
                         Text(
@@ -921,30 +933,43 @@ private fun NotificationManagementScreen(
                         if (visibleHistory.isEmpty()) {
                             Text("표시할 알림이 없습니다.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         } else {
-                            LazyColumn(
-                                modifier = Modifier.weight(1f),
-                                verticalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                items(visibleHistory, key = { it.id }) { event ->
-                                    Column {
-                                        NotificationEventRow(
-                                            event = event,
-                                            suggestedPayment = payments.firstOrNull { it.payment.id == event.suggestedPaymentId },
-                                            onConfirmDuplicateAsSame = { onConfirmDuplicateAsSame(event) },
-                                            onConfirmDuplicateAsSeparate = { onConfirmDuplicateAsSeparate(event) },
-                                        )
-                                        if (event.registrationStatus == CandidateRegistrationStatus.HISTORICAL_CANDIDATE.name) {
-                                            Button(
-                                                onClick = { onAddHistorical(event) },
-                                                modifier = Modifier.fillMaxWidth(),
-                                            ) { Text("결제에 추가") }
-                                        }
-                                        if (showAllHistory && event.packageName !in selectedPackages) {
-                                            TextButton(
-                                                onClick = { onPackageSelectedChange(event.packageName, true) },
-                                            ) { Text("이 앱의 결제 알림 허용") }
+                            Box(Modifier.weight(1f)) {
+                                LazyColumn(
+                                    state = historyListState,
+                                    modifier = Modifier.fillMaxSize(),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    items(visibleHistory, key = { it.id }) { event ->
+                                        Column {
+                                            NotificationEventRow(
+                                                event = event,
+                                                suggestedPayment = payments.firstOrNull { it.payment.id == event.suggestedPaymentId },
+                                                onConfirmDuplicateAsSame = { onConfirmDuplicateAsSame(event) },
+                                                onConfirmDuplicateAsSeparate = { onConfirmDuplicateAsSeparate(event) },
+                                            )
+                                            if (event.registrationStatus == CandidateRegistrationStatus.HISTORICAL_CANDIDATE.name) {
+                                                Button(
+                                                    onClick = { onAddHistorical(event) },
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                ) { Text("결제에 추가") }
+                                            }
+                                            if (showAllHistory && event.packageName !in selectedPackages) {
+                                                TextButton(
+                                                    onClick = { onPackageSelectedChange(event.packageName, true) },
+                                                ) { Text("이 앱의 결제 알림 허용") }
+                                            }
                                         }
                                     }
+                                }
+                                if (historyListState.firstVisibleItemIndex > 0) {
+                                    SmallFloatingActionButton(
+                                        onClick = {
+                                            historyCoroutineScope.launch {
+                                                historyListState.animateScrollToItem(0)
+                                            }
+                                        },
+                                        modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp),
+                                    ) { Text("↑", style = MaterialTheme.typography.titleLarge) }
                                 }
                             }
                         }
@@ -955,7 +980,7 @@ private fun NotificationManagementScreen(
                         if (selectedApp == null) {
                             LazyColumn(
                                 modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
                             ) {
                                 item {
                                     PrimaryTabRow(selectedTabIndex = appStatusTab) {
@@ -977,7 +1002,7 @@ private fun NotificationManagementScreen(
                                 }
                                 item {
                                     Text(
-                                        "알림을 한 번 이상 받은 앱만 표시됩니다. 앱을 차단하면 자동 등록 대상에서 제외됩니다.",
+                                        "알림을 한 번 이상 받은 앱만 표시됩니다.",
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
@@ -997,6 +1022,12 @@ private fun NotificationManagementScreen(
                                             modifier = Modifier.fillMaxWidth().padding(14.dp),
                                             verticalAlignment = Alignment.CenterVertically,
                                         ) {
+                                            NotificationAppIcon(
+                                                packageName = app.packageName,
+                                                contentDescription = app.appName,
+                                                modifier = Modifier.size(40.dp),
+                                            )
+                                            Spacer(Modifier.width(12.dp))
                                             Column(Modifier.weight(1f)) {
                                                 Text(app.appName, fontWeight = FontWeight.Bold)
                                                 Text(app.packageName, style = MaterialTheme.typography.labelSmall)
@@ -1027,8 +1058,18 @@ private fun NotificationManagementScreen(
                             ) {
                                 item { TextButton(onClick = { detailPackage = null }) { Text("‹ 앱 목록") } }
                                 item {
-                                    Text(selectedApp.appName, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                                    Text(packageName, style = MaterialTheme.typography.labelSmall)
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        NotificationAppIcon(
+                                            packageName = packageName,
+                                            contentDescription = selectedApp.appName,
+                                            modifier = Modifier.size(48.dp),
+                                        )
+                                        Spacer(Modifier.width(12.dp))
+                                        Column {
+                                            Text(selectedApp.appName, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                                            Text(packageName, style = MaterialTheme.typography.labelSmall)
+                                        }
+                                    }
                                 }
                                 item {
                                     Text("앱별 등록 상태", fontWeight = FontWeight.Bold)
@@ -1058,8 +1099,9 @@ private fun NotificationManagementScreen(
                                         )
                                     }
                                 }
-                                item {
-                                    Text("기본 결제수단", fontWeight = FontWeight.Bold)
+                                if (packageName in selectedPackages) {
+                                    item {
+                                        Text("기본 결제수단", fontWeight = FontWeight.Bold)
                                     OutlinedCard(onClick = { defaultMenu = true }, modifier = Modifier.fillMaxWidth()) {
                                         Text(
                                             methods.firstOrNull { it.id == defaultMethodId }?.name ?: "미분류",
@@ -1089,8 +1131,8 @@ private fun NotificationManagementScreen(
                                         }
                                     }
                                 }
-                                item { Text("키워드별 결제수단", fontWeight = FontWeight.Bold) }
-                                items(rules, key = { "${it.phrase}:${it.paymentMethodId}" }) { rule ->
+                                    item { Text("키워드별 결제수단", fontWeight = FontWeight.Bold) }
+                                    items(rules, key = { "${it.phrase}:${it.paymentMethodId}" }) { rule ->
                                     Card {
                                         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                             Column(Modifier.weight(1f)) {
@@ -1105,8 +1147,8 @@ private fun NotificationManagementScreen(
                                         }
                                     }
                                 }
-                                item {
-                                    OutlinedTextField(
+                                    item {
+                                        OutlinedTextField(
                                         value = rulePhrase,
                                         onValueChange = { rulePhrase = it },
                                         label = { Text("포함 문구 예: 카드, 출금") },
@@ -1145,12 +1187,20 @@ private fun NotificationManagementScreen(
                                         modifier = Modifier.fillMaxWidth(),
                                     ) { Text("연결 규칙 추가") }
                                 }
-                                item {
-                                    Text(
+                                    item {
+                                        Text(
                                         "더 긴 키워드가 먼저 적용됩니다. 어떤 규칙에도 맞지 않으면 기본 결제수단을 사용하고, 기본값도 없으면 미분류로 등록합니다.",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
+                                    }
+                                } else {
+                                    item {
+                                        Text(
+                                            "앱을 허용하면 결제수단과 키워드 연결을 설정할 수 있습니다.",
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -1303,8 +1353,16 @@ private fun NotificationEventRow(
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(event.appName, fontWeight = FontWeight.SemiBold)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                NotificationAppIcon(
+                    packageName = event.packageName,
+                    contentDescription = event.appName,
+                    modifier = Modifier.size(40.dp),
+                )
+                Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                    Text(event.appName, fontWeight = FontWeight.SemiBold)
+                    Text(event.packageName, style = MaterialTheme.typography.labelSmall)
+                }
                 Text(
                     event.receivedAt.asDebugDate(),
                     style = MaterialTheme.typography.labelSmall,
@@ -1380,6 +1438,25 @@ private fun NotificationEventRow(
             Text("원문: ${event.rawText}", style = MaterialTheme.typography.bodySmall)
         }
     }
+}
+
+@Composable
+private fun NotificationAppIcon(
+    packageName: String,
+    contentDescription: String,
+    modifier: Modifier = Modifier.size(40.dp),
+) {
+    val context = LocalContext.current
+    val icon = remember(packageName) {
+        val drawable = runCatching {
+            context.packageManager.getApplicationIcon(packageName)
+        }.getOrElse {
+            context.getDrawable(android.R.drawable.sym_def_app_icon)
+                ?: error("기본 앱 아이콘을 불러오지 못했습니다.")
+        }
+        drawable.toBitmap(width = 96, height = 96).asImageBitmap()
+    }
+    Image(bitmap = icon, contentDescription = contentDescription, modifier = modifier)
 }
 
 @Composable
